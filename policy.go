@@ -294,8 +294,8 @@ type Evaluation uint8
 
 const (
 	Permit         Evaluation = 0b01
-	RejectExplicit            = 0b10
-	RejectImplicit            = 0b00
+	RejectExplicit Evaluation = 0b10
+	RejectImplicit Evaluation = 0b00
 )
 
 type PolicySet []*Policy
