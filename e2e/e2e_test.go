@@ -77,6 +77,7 @@ func TestIntegrationOAuthLoginFlow(t *testing.T) {
 	client := httpClient()
 
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://caddy", nil)
+	req.Header.Set("Sec-Fetch-Dest", "document")
 	assert.NoError(t, err)
 
 	resp, _ := checkResponse(t, client, req, http.StatusOK) // Initiate login flow

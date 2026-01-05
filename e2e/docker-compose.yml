@@ -23,3 +23,5 @@ services:
     depends_on:
       - oidc-provider
       - caddy
+    volumes:
+      - ./results:/src/results
