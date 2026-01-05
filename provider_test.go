@@ -7,32 +7,40 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/oauth2/jws"
 )
 
-type AlwaysValidKeySet struct {
-}
+var testKey = []byte("secret-key-for-testing-purposes-only")
 
-func (AlwaysValidKeySet) VerifySignature(ctx context.Context, jwt string) (payload []byte, err error) {
-	j, err := jose.ParseSigned(jwt, []jose.SignatureAlgorithm{"none"})
+type TestKeySet struct{}
+
+func (TestKeySet) VerifySignature(ctx context.Context, token string) (payload []byte, err error) {
+	jws, err := jose.ParseSigned(token, []jose.SignatureAlgorithm{jose.HS256})
 	if err != nil {
 		return nil, err
 	}
-	return j.UnsafePayloadWithoutVerification(), nil
+
+	return jws.Verify(testKey)
 }
 
-func GenerateTestJWTUnsigned() string {
-	j, _ := jws.EncodeWithSigner(&jws.Header{
-		Algorithm: "none",
-	}, &jws.ClaimSet{
-		Sub: "test",
-		Iss: "http://openid/example",
-		Aud: "xyz",
-	}, func(data []byte) (sig []byte, err error) {
-		return []byte{}, nil
-	})
-	return j
+func GenerateTestJWT() string {
+	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: testKey}, (&jose.SignerOptions{}).WithType("JWT"))
+	if err != nil {
+		panic(err)
+	}
+
+	cl := jwt.Claims{
+		Subject:  "test",
+		Issuer:   "http://openid/example",
+		Audience: jwt.Audience{"xyz"},
+	}
+
+	raw, err := jwt.Signed(sig).Claims(cl).Serialize()
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
 
 func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {

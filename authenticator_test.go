@@ -27,9 +27,10 @@ func GenerateTestAuthenticator() *Authenticator {
 		log:     zap.NewNop(),
 		uid:     UidSubClaimKey,
 		cookies: securecookie.New([]byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm"), []byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm")),
-		verifier: oidc.NewVerifier("http://openid/example", AlwaysValidKeySet{}, &oidc.Config{
+		verifier: oidc.NewVerifier("http://openid/example", TestKeySet{}, &oidc.Config{
 			ClientID:             "xyz",
-			SupportedSigningAlgs: []string{"none"},
+			SupportedSigningAlgs: []string{"HS256"},
+			SkipExpiryCheck:      true,
 		}),
 		oauth2: &oauth2.Config{
 			ClientID: "xyz",
@@ -68,7 +69,7 @@ func TestAuthenticator_Authenticate_WithBearerAuthentication(t *testing.T) {
 	pr := GenerateTestAuthenticator()
 
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTUnsigned())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 
 	s, err := pr.Authenticate(r)
 	if assert.NoError(t, err) {
@@ -106,7 +107,7 @@ func TestAuthenticator_Authenticate_WithSessionCookie_SignedByOther(t *testing.T
 
 	r.AddCookie(cookie)
 
-	s, err = pr.Authenticate(r)
+	_, err = pr.Authenticate(r)
 	assert.Error(t, err)
 
 	var he caddyhttp.HandlerError

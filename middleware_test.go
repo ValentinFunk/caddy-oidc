@@ -139,7 +139,7 @@ func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_NoPolicy(t *testing.T
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTUnsigned())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 	h := new(TestHandler)
 
 	err := auth.ServeHTTP(w, r, h)
@@ -161,7 +161,7 @@ func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_AllowUser(t *testing.
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTUnsigned())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 	h := new(TestHandler)
 
 	err := auth.ServeHTTP(w, r, h)
@@ -186,7 +186,7 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerUserID(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTUnsigned())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 	r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
 	h := new(TestHandler)
 
@@ -217,7 +217,7 @@ func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_AllowUser_WithDeny(t 
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTUnsigned())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 	h := new(TestHandler)
 
 	err := auth.ServeHTTP(w, r, h)

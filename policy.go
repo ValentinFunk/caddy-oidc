@@ -130,7 +130,7 @@ func (ir *IpRange) UnmarshalText(text []byte) error {
 }
 
 func (ir *IpRange) MarshalText() ([]byte, error) {
-	return []byte(ir.Prefix.String()), nil
+	return []byte(ir.String()), nil
 }
 
 type RequestValue struct {
@@ -294,8 +294,8 @@ type Evaluation uint8
 
 const (
 	Permit         Evaluation = 0b01
-	RejectExplicit            = 0b10
-	RejectImplicit            = 0b00
+	RejectExplicit Evaluation = 0b10
+	RejectImplicit Evaluation = 0b00
 )
 
 type PolicySet []*Policy
@@ -312,7 +312,7 @@ func (ps *PolicySet) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.Errf("unrecognized action '%s'", d.Val())
 		}
 
-		err := pol.RequestMatcher.UnmarshalCaddyfile(d)
+		err := pol.UnmarshalCaddyfile(d)
 		if err != nil {
 			return err
 		}
