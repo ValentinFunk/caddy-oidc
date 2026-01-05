@@ -22,7 +22,7 @@ jobs:
       - name: Build and Run E2E Stack
         run: |
           mkdir -p e2e/results
-          docker buildx bake -f e2e/docker-compose.yml --load --set *.cache-from=type=gha --set *.cache-to=type=gha,mode=max
+          docker buildx bake --allow=fs.read=.. -f e2e/docker-compose.yml --load --set *.cache-from=type=gha --set *.cache-to=type=gha,mode=max
           docker compose -f e2e/docker-compose.yml up --abort-on-container-exit --attach-dependencies --exit-code-from test
 
       - name: Publish Test Results
