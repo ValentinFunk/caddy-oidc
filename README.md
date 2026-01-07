@@ -21,10 +21,10 @@ The global directive is used to configure the OIDC provider. An example minimum 
 ```caddyfile
 {
     oidc example {
-        issuer https://accounts.google.com
-        client_id <client_id>
-        secret_key {env.OIDC_SECRET_KEY}
-    }
+                     issuer https://accounts.google.com
+                     client_id < client_id >
+                     secret_key {env.OIDC_SECRET_KEY}
+                 }
 }
 ```
 
@@ -33,10 +33,10 @@ Each route then uses the `oidc` directive to configure the route using the named
 ```caddyfile
 example.com {
     oidc example {
-        allow {
-            user *
-        }
-    }
+                     allow {
+                               user *
+                           }
+                 }
     reverse_proxy localhost:8080
 }
 ```
@@ -51,6 +51,8 @@ example.com {
 - `tls_insecure_skip_verify` - (optional) Skip TLS certificate verification with the OIDC provider.
 - `scope` - (optional) The scope to request from the OIDC provider. Defaults to `openid`.
 - `username` - (optional) The claim to use as the username. Defaults to `sub`.
+- `claim` - (optional) A list of claims to include in the session. Used for request authorization. Any access policy
+  rules that use a claim must be configured here.
 - `cookie` - (optional) Configures the cookie used to store the authentication state.
 
 ### Cookie
@@ -77,36 +79,40 @@ cookie {
 ## Handler Directive
 
 The handler directive is placed on routes to provide authentication and authorization for that route.
-Requests are authenticated according to the configured OIDC provider and then authorized according to access policy rules configured in the directive.
+Requests are authenticated according to the configured OIDC provider and then authorized according to access policy
+rules configured in the directive.
 
 The handler directive **must** contain at least one `allow` rule.
 
 ```caddyfile
 # Allow any valid authenticated user
+
 example.com {
     oidc example {
-        allow {
-            user *
-        }
-    }
+                     allow {
+                               user *
+                           }
+                 }
     reverse_proxy localhost:8080
 }
 ```
 
 ### Access Rules
 
-Each access rule can be either `allow` or `deny`. Inspired by AWS IAM policies, each request must match at least one `allow` rule to be authorized.
+Each access rule can be either `allow` or `deny`. Inspired by AWS IAM policies, each request must match at least one
+`allow` rule to be authorized.
 If a request matches any `deny` rule then the request is denied.
 
 ```caddyfile
 # Allow any authenticated user from example.com except from steve
+
 oidc example {
     allow {
-        user *@example.com
-    }
+              user *@example.com
+          }
     deny {
-        user steve@example.com
-    }
+             user steve@example.com
+         }
 }
 ```
 
@@ -114,17 +120,19 @@ Multiple conditions for a single rule are a logical AND.
 
 ```caddyfile
 # Allow unauthenticated access from the local network
+
 oidc example {
     allow {
-        anonymous
-        client 192.168.0.0/24
-    }
+              anonymous
+              client 192.168.0.0/24
+          }
 }
 ```
 
 #### user
 
-The `user` rule can be used to match authenticated users by their username. The username is extracted from the OIDC claims according to the provider configuration.
+The `user` rule can be used to match authenticated users by their username. The username is extracted from the OIDC
+claims according to the provider configuration.
 One or more usernames can be specified in a space separated list and supports wildcard `*` matching.
 
 #### anonymous
@@ -143,8 +151,9 @@ The `query` rule can be used to match requests based on query parameters, either
 
 ```caddyfile
 # Allow requests having api-key=xyz and/or public
+
 allow {
-  query api-key=xyz public
+    query api-key=xyz public
 }
 ```
 
@@ -155,7 +164,46 @@ The header name is case-insensitive and normalized to the canonical form specifi
 
 ```caddyfile
 # Allow requests having X-Api-Key=xyz
+
 allow {
-  header X-Api-Key=xyz
+    header X-Api-Key=xyz
+}
+```
+
+#### claim
+
+Match requests based on the value of a claim in the ID token or session cookie. The oidc provider must be configured to
+copy claims from the ID token.
+
+If the ID token claims are an array, the rule matches if any of the array values match. Each claim value must be a
+string.
+
+Standard claims (i.e. `exp`, `aud`, `iat`) are always validated.
+
+```caddyfile
+# Allow requests having the claim role=read
+
+allow {
+    claim role=read
+}
+```
+
+Multiple values for a single claim directive are a logical AND
+
+```caddyfile
+# Allow requests having the claim role=read AND role=admin
+
+allow {
+    claim role=read role=admin
+}
+```
+
+Claim restrictions are wildcard matched against the claim value.
+
+```caddyfile
+# Allow requests having the claim where any role value starts with read:
+
+allow {
+    claim role=read:*
 }
 ```

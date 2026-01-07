@@ -24,7 +24,10 @@ func init() {
 	caddy.RegisterModule(new(OIDCProviderModule))
 }
 
-const DefaultRedirectUriPath = "/oauth2/callback"
+const (
+	DefaultRedirectUriPath = "/oauth2/callback"
+	DefaultUsernameClaim   = "sub"
+)
 
 var _ caddy.Module = (*OIDCProviderModule)(nil)
 var _ caddy.Provisioner = (*OIDCProviderModule)(nil)
@@ -40,7 +43,8 @@ type OIDCProviderModule struct {
 	TLSInsecureSkipVerify bool     `json:"tls_insecure_skip_verify,omitempty"`
 	Cookie                *Cookies `json:"cookie,omitempty"`
 	Scope                 []string `json:"scope,omitempty"`
-	Username              UidClaim `json:"username,omitempty"`
+	Username              string   `json:"username,omitempty"`
+	Claims                []string `json:"claims,omitempty"`
 }
 
 func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
@@ -61,12 +65,14 @@ func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
 	discovery_url <discovery_url>
 	scope [<scope>...]
 	username <username>
+	claim [<claim>...]
 	cookie <name> | {
 		name <name>
 		same_site <same_site>
 		insecure
 		domain <domain>
 		path <path>
+
 	}
 }
 */
@@ -107,7 +113,9 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
-			m.Username = UidClaim(d.Val())
+			m.Username = d.Val()
+		case "claim":
+			m.Claims = append(m.Claims, d.RemainingArgs()...)
 		default:
 			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
@@ -131,7 +139,7 @@ func (m *OIDCProviderModule) Provision(_ caddy.Context) error {
 	}
 
 	if m.Username == "" {
-		m.Username = UidSubClaimKey
+		m.Username = DefaultUsernameClaim
 	}
 
 	if m.RedirectURI == "" {

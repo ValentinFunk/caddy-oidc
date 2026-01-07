@@ -1,6 +1,7 @@
 package caddy_oidc
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,7 +18,11 @@ import (
 
 func GenerateTestAuthenticator() *Authenticator {
 	return &Authenticator{
-		cookie: &DefaultCookieOptions,
+		cookie: &Cookies{
+			Name:     "session",
+			SameSite: SameSite{http.SameSiteLaxMode},
+			Path:     "/",
+		},
 		clock: func() time.Time {
 			return time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 		},
@@ -25,7 +30,8 @@ func GenerateTestAuthenticator() *Authenticator {
 			Path: "/oauth2/callback",
 		},
 		log:     zap.NewNop(),
-		uid:     UidSubClaimKey,
+		uid:     DefaultUsernameClaim,
+		claims:  []string{"email", "role"},
 		cookies: securecookie.New([]byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm"), []byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm")),
 		verifier: oidc.NewVerifier("http://openid/example", TestKeySet{}, &oidc.Config{
 			ClientID:             "xyz",
@@ -39,6 +45,69 @@ func GenerateTestAuthenticator() *Authenticator {
 				TokenURL: "http://openid/example/token",
 			},
 		},
+	}
+}
+
+type claimsStr string
+
+func (c claimsStr) Claims(v any) error {
+	return json.Unmarshal([]byte(c), v)
+}
+
+func TestAuthenticator_SessionFromClaims(t *testing.T) {
+	tests := []struct {
+		name      string
+		claims    claimsStr
+		expect    Session
+		shouldErr bool
+	}{
+		{
+			name:   "basic",
+			claims: claimsStr(`{"sub": "test"}`),
+			expect: Session{
+				Uid:    "test",
+				Claims: json.RawMessage(`{}`),
+			},
+		},
+		{
+			name:   "with expiry",
+			claims: claimsStr(`{"sub": "test", "exp": 1577836800}`),
+			expect: Session{
+				Uid:       "test",
+				ExpiresAt: 1577836800,
+				Claims:    json.RawMessage(`{}`),
+			},
+		},
+		{
+			name:   "with claims partial",
+			claims: claimsStr(`{"sub": "test", "email": "x@example.org"}`),
+			expect: Session{
+				Uid:    "test",
+				Claims: json.RawMessage(`{"email":"x@example.org"}`),
+			},
+		},
+		{
+			name:   "with claims full",
+			claims: claimsStr(`{"sub": "test", "email": "x@example.org", "role": ["admin", "viewer"]}`),
+			expect: Session{
+				Uid:    "test",
+				Claims: json.RawMessage(`{"email":"x@example.org","role":["admin", "viewer"]}`),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			au := GenerateTestAuthenticator()
+			s, err := au.SessionFromClaims(tt.claims)
+			if tt.shouldErr {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.EqualValues(t, tt.expect, *s)
+		})
 	}
 }
 
@@ -74,6 +143,7 @@ func TestAuthenticator_Authenticate_WithBearerAuthentication(t *testing.T) {
 	s, err := pr.Authenticate(r)
 	if assert.NoError(t, err) {
 		assert.Equal(t, "test", s.Uid)
+		assert.Equal(t, json.RawMessage(`{"email":"x@example.org"}`), s.Claims)
 	}
 }
 
