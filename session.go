@@ -1,16 +1,20 @@
 package caddy_oidc
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/securecookie"
+	"github.com/tidwall/gjson"
 )
 
 var AnonymousSession = &Session{Anonymous: true}
 
+// A ClaimsDecoder is a type that can decode arbitrary claims into a value using JSON.
+// The value might be a json.RawMessage.
 type ClaimsDecoder interface {
 	Claims(v any) error
 }
@@ -22,18 +26,18 @@ type UidClaim string
 
 // FromClaims extracts the user id from the claims
 func (u UidClaim) FromClaims(claims ClaimsDecoder) (string, error) {
-	var arbitraryClaims = make(map[string]any)
-	err := claims.Claims(&arbitraryClaims)
+	var rawClaims *json.RawMessage
+	err := claims.Claims(&rawClaims)
 	if err != nil {
 		return "", err
 	}
 
-	val, ok := arbitraryClaims[string(u)].(string)
-	if !ok {
+	val := gjson.GetBytes(*rawClaims, string(u))
+	if !val.Exists() || val.Type != gjson.String {
 		return "", fmt.Errorf("missing claim '%s' for username", u)
 	}
 
-	return val, nil
+	return val.String(), nil
 }
 
 type Session struct {
