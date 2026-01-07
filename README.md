@@ -107,12 +107,12 @@ If a request matches any `deny` rule then the request is denied.
 # Allow any authenticated user from example.com except from steve
 
 oidc example {
-    allow {
-        user *@example.com
-    }
-    deny {
-        user steve@example.com
-    }
+  allow {
+    user *@example.com
+  }
+  deny {
+    user steve@example.com
+  }
 }
 ```
 
