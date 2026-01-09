@@ -130,7 +130,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
 
 	wwwAuthenticate := w.Header().Get("WWW-Authenticate")
 	assert.NotEmpty(t, wwwAuthenticate)
-	assert.Equal(t, `Bearer realm="https://example.com", resource_metadata="https://example.com/.well-known/oauth-protected-resource", scope="openid profile email offline_access"`, wwwAuthenticate)
+	assert.Equal(t, `Bearer resource_metadata="http://example.com/.well-known/oauth-protected-resource", scope="openid profile email offline_access"`, wwwAuthenticate)
 }
 
 func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_NoPolicy(t *testing.T) {
@@ -239,7 +239,7 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) 
 	assert.Equal(t, 0, h.calls)
 
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-	assert.Equal(t, "{\n  \"resource\": \"https://example.com\",\n  \"authorization_servers\": [\n    \"https://openid/example\"\n  ],\n  \"scopes_supported\": [\n    \"openid\",\n    \"profile\",\n    \"email\",\n    \"offline_access\"\n  ]\n}\n", w.Body.String())
+	assert.Equal(t, "{\n  \"resource\": \"http://example.com\",\n  \"authorization_servers\": [\n    \"https://openid/example\"\n  ],\n  \"scopes_supported\": [\n    \"openid\",\n    \"profile\",\n    \"email\",\n    \"offline_access\"\n  ]\n}\n", w.Body.String())
 }
 
 func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *testing.T) {

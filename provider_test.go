@@ -75,7 +75,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 					insecure
 				}
 				protected_resource_metadata {
-					realm https://example.com
+					audience
 				}
 			}`,
 			shouldErr: false,
@@ -95,8 +95,8 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 					Path:     "/",
 				},
 				ProtectedResourceMetadata: &ProtectedResourceMetadataConfiguration{
-					Disable: false,
-					Realm:   "https://example.com",
+					Disable:  false,
+					Audience: true,
 				},
 			},
 		},

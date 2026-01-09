@@ -27,15 +27,6 @@ func TestProtectedResourceMetadataConfiguration_UnmarshalCaddyfile(t *testing.T)
 			},
 		},
 		{
-			name: "realm",
-			input: `protected_resource_metadata {
-				realm https://example.com
-			}`,
-			expect: &ProtectedResourceMetadataConfiguration{
-				Realm: "https://example.com",
-			},
-		},
-		{
 			name: "audience",
 			input: `protected_resource_metadata {
 				audience
@@ -75,5 +66,5 @@ func TestOAuthProtectedResource_WWWAuthenticate(t *testing.T) {
 		ScopesSupported: []string{"openid", "profile", "email"},
 	}
 
-	assert.Equal(t, "Bearer realm=\"http://example.com\", resource_metadata=\"http://example.com/.well-known/oauth-protected-resource\", scope=\"openid profile email\"", md.WWWAuthenticate())
+	assert.Equal(t, "Bearer resource_metadata=\"http://example.com/.well-known/oauth-protected-resource\", scope=\"openid profile email\"", md.WWWAuthenticate())
 }

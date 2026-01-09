@@ -87,28 +87,13 @@ If the request is unauthenticated, passes at least one `allow` rule, and the req
 then a `401 Unauthorized` response is returned with a WWW-Authenticate header conforming
 to [WWW-Authenticate Response](https://datatracker.ietf.org/doc/html/rfc9728#section-5.1).
 
-Settings can be controlled via the global directive `protected_resource_metadata`. The default behavior is to enable.
-
-```caddyfile
-# Override the realm
-protected_resource_metadata {
-    realm https://example.com
-}
-```
+Settings can be controlled via the `oidc` directive `protected_resource_metadata`. The default behavior is to enable.
 
 ```caddyfile
 # Disable RFC9728 support.
 # This makes /.well-known/oauth-protected-resource return a 404 Not Found.
 protected_resource_metadata off
 ```
-
-#### Realm
-
-The metadata `Resource` and WWW-Authenticate realm is based on the cookie configuration and current request information.
-
-- Use the explicit realm if configured
-- If a specific cookie domain is not configured, then the realm host is the request host.
-- The realm scheme is based on the request scheme. HTTP is only used if the cookie is marked as insecure.
 
 #### Audience
 

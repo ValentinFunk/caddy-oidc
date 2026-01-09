@@ -230,38 +230,6 @@ func TestAuthenticator_SessionFromCookie(t *testing.T) {
 	assert.ErrorAs(t, err, &e)
 }
 
-func TestAuthenticator_Realm(t *testing.T) {
-	t.Run("basic request", func(t *testing.T) {
-		pr := GenerateTestAuthenticator()
-		r := httptest.NewRequest("GET", "https://example.com/endpoint?x=y", nil)
-		assert.Equal(t, "https://example.com", pr.Realm(r))
-	})
-
-	t.Run("insecure http", func(t *testing.T) {
-		pr := GenerateTestAuthenticator()
-		pr.cookie.Insecure = true
-		r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
-		assert.Equal(t, "http://example.com", pr.Realm(r))
-	})
-	t.Run("http with secure cookies", func(t *testing.T) {
-		pr := GenerateTestAuthenticator()
-		r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
-		assert.Equal(t, "https://example.com", pr.Realm(r))
-	})
-	t.Run("cookie domain", func(t *testing.T) {
-		pr := GenerateTestAuthenticator()
-		pr.cookie.Domain = "example.com"
-		r := httptest.NewRequest("GET", "http://subdomain.example.com/endpoint?x=y", nil)
-		assert.Equal(t, "https://example.com", pr.Realm(r))
-	})
-	t.Run("with explicit realm", func(t *testing.T) {
-		pr := GenerateTestAuthenticator()
-		pr.protectedResource.Realm = "https://realm"
-		r := httptest.NewRequest("GET", "https://example.com", nil)
-		assert.Equal(t, "https://realm", pr.Realm(r))
-	})
-}
-
 func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
 	pr := GenerateTestAuthenticator()
 
@@ -270,7 +238,7 @@ func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
 	md, ok := pr.ProtectedResourceMetadata(r)
 	assert.True(t, ok)
 	assert.EqualValues(t, &OAuthProtectedResource{
-		Resource:        "https://example.com",
+		Resource:        "http://example.com",
 		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},
 		AuthorizationServers: []string{
 			"https://openid/example",
@@ -287,7 +255,7 @@ func TestAuthenticator_ProtectedResourceMetadata_WithAudience(t *testing.T) {
 	md, ok := pr.ProtectedResourceMetadata(r)
 	assert.True(t, ok)
 	assert.EqualValues(t, &OAuthProtectedResource{
-		Resource:        "https://example.com",
+		Resource:        "http://example.com",
 		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},
 		Audience:        "xyz",
 		AuthorizationServers: []string{

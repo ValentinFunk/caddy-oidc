@@ -10,15 +10,13 @@ import (
 var _ caddyfile.Unmarshaler = (*ProtectedResourceMetadataConfiguration)(nil)
 
 type ProtectedResourceMetadataConfiguration struct {
-	Disable  bool   `json:"disable"`
-	Realm    string `json:"realm,omitempty"`
-	Audience bool   `json:"audience,omitempty"`
+	Disable  bool `json:"disable"`
+	Audience bool `json:"audience,omitempty"`
 }
 
 // UnmarshalCaddyfile sets up the ProtectedResourceMetadataConfiguration from Caddyfile tokens.
 /* syntax
 protected_resource_metadata disable | {
-	realm [<realm>]
 	audience
 }
 */
@@ -37,12 +35,6 @@ func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile
 
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		switch d.Val() {
-		case "realm":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			c.Realm = d.Val()
 		case "audience":
 			c.Audience = true
 		default:
@@ -69,7 +61,6 @@ type OAuthProtectedResource struct {
 // https://datatracker.ietf.org/doc/html/rfc6750#section-3
 func (md *OAuthProtectedResource) WWWAuthenticate() string {
 	var params = []string{
-		fmt.Sprintf("realm=%q", md.Resource),
 		fmt.Sprintf("resource_metadata=%q", fmt.Sprintf("%s/.well-known/oauth-protected-resource", md.Resource)),
 	}
 

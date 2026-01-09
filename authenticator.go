@@ -323,29 +323,6 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request, 
 	return nil
 }
 
-// Realm returns the realm for this authenticator based on the cookie domain and protected resource configuration.
-// An explicit realm can be configured in the protected resource configuration.
-// If the cookie domain is empty, then the real is based on the request host.
-// https://datatracker.ietf.org/doc/html/rfc2617#section-1.2
-func (au *Authenticator) Realm(r *http.Request) string {
-	if au.protectedResource.Realm != "" {
-		return au.protectedResource.Realm
-	}
-
-	var requestUrl = RequestUrl(r)
-	var domain = au.cookie.Domain
-	if domain == "" {
-		domain = requestUrl.Host
-	}
-
-	var scheme = "https"
-	if requestUrl.Scheme == "http" && au.cookie.Insecure {
-		scheme = "http"
-	}
-
-	return fmt.Sprintf("%s://%s", scheme, domain)
-}
-
 // ProtectedResourceMetadata returns the OAuth protected resource metadata for this authenticator.
 // If protected resource metadata is not enabled, then false is returned.
 func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) (*OAuthProtectedResource, bool) {
@@ -353,8 +330,9 @@ func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) (*OAuthProte
 		return nil, false
 	}
 
+	var ru = RequestUrl(r)
 	var md = &OAuthProtectedResource{
-		Resource:        au.Realm(r),
+		Resource:        fmt.Sprintf("%s://%s", ru.Scheme, ru.Host),
 		ScopesSupported: au.oauth2.Scopes(),
 		AuthorizationServers: []string{
 			au.issuer,
