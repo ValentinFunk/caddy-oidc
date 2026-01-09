@@ -1,7 +1,9 @@
 package caddy_oidc
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,29 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
+
+type testOAuthClientImpl struct{}
+
+func (testOAuthClientImpl) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	var oConfig = oauth2.Config{
+		ClientID:    "xyz",
+		RedirectURL: "https://localhost/oauth2/callback",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "http://openid/example/authorize",
+			TokenURL: "http://openid/example/token",
+		},
+	}
+
+	return oConfig.AuthCodeURL(state, opts...)
+}
+
+func (testOAuthClientImpl) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	return nil, errors.New("token exchange not supported in test")
+}
+
+func (testOAuthClientImpl) Scopes() []string {
+	return []string{"openid", "profile", "email", "offline_access"}
+}
 
 func GenerateTestAuthenticator() *Authenticator {
 	return &Authenticator{
@@ -31,6 +56,7 @@ func GenerateTestAuthenticator() *Authenticator {
 		},
 		log:     zap.NewNop(),
 		uid:     DefaultUsernameClaim,
+		issuer:  "https://openid/example",
 		claims:  []string{"email", "role"},
 		cookies: securecookie.New([]byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm"), []byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm")),
 		verifier: oidc.NewVerifier("http://openid/example", TestKeySet{}, &oidc.Config{
@@ -38,13 +64,7 @@ func GenerateTestAuthenticator() *Authenticator {
 			SupportedSigningAlgs: []string{"HS256"},
 			SkipExpiryCheck:      true,
 		}),
-		oauth2: &oauth2.Config{
-			ClientID: "xyz",
-			Endpoint: oauth2.Endpoint{
-				AuthURL:  "http://openid/example/authorize",
-				TokenURL: "http://openid/example/token",
-			},
-		},
+		oauth2: testOAuthClientImpl{},
 	}
 }
 
@@ -203,4 +223,45 @@ func TestAuthenticator_SessionFromCookie(t *testing.T) {
 
 	var e *oidc.TokenExpiredError
 	assert.ErrorAs(t, err, &e)
+}
+
+func TestAuthenticator_Realm(t *testing.T) {
+	t.Run("basic request", func(t *testing.T) {
+		pr := GenerateTestAuthenticator()
+		r := httptest.NewRequest("GET", "https://example.com/endpoint?x=y", nil)
+		assert.Equal(t, "https://example.com", pr.Realm(r))
+	})
+
+	t.Run("insecure http", func(t *testing.T) {
+		pr := GenerateTestAuthenticator()
+		pr.cookie.Insecure = true
+		r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
+		assert.Equal(t, "http://example.com", pr.Realm(r))
+	})
+	t.Run("http with secure cookies", func(t *testing.T) {
+		pr := GenerateTestAuthenticator()
+		r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
+		assert.Equal(t, "https://example.com", pr.Realm(r))
+	})
+	t.Run("cookie domain", func(t *testing.T) {
+		pr := GenerateTestAuthenticator()
+		pr.cookie.Domain = "example.com"
+		r := httptest.NewRequest("GET", "http://subdomain.example.com/endpoint?x=y", nil)
+		assert.Equal(t, "https://example.com", pr.Realm(r))
+	})
+}
+
+func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
+	pr := GenerateTestAuthenticator()
+
+	r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
+
+	md := pr.ProtectedResourceMetadata(r)
+	assert.EqualValues(t, &OAuthProtectedResource{
+		Resource:        "https://example.com",
+		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},
+		AuthorizationServers: []string{
+			"https://openid/example",
+		},
+	}, md)
 }

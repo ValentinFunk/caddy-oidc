@@ -11,6 +11,7 @@ configured individually, perform authentication and authorization at the Caddy l
 - Centralized access logging that includes user ID
 - Easier integration with security tools like fail2ban, etc
 - Anonymous access and client ip-based authorization rules
+- Support for RFC9728 (OAuth 2.0 Protected Resource Metadata)
 
 # Configuration
 
@@ -218,3 +219,18 @@ allow {
     claim role=read:*
 }
 ```
+
+## RFC9728 Support
+
+Caddy OIDC supports RFC9728 (OAuth 2.0 Protected Resource Metadata) to discover the OIDC provider metadata via the
+well-known URL `/.well-known/oauth-protected-resource`.
+
+If the request is unauthenticated, passes at least one `allow` rule, and the request is not made by a browser,
+then a `401 Unauthorized` response is returned with a WWW-Authenticate header conforming to [WWW-Authenticate Response](https://datatracker.ietf.org/doc/html/rfc9728#section-5.1).
+
+### Realm
+
+The metadata `Resource` and WWW-Authenticate realm is based on the cookie configuration and current request information.
+
+  - If a specific cookie domain is not configured, then the realm host is the request host.
+  - The realm scheme is based on the request scheme. HTTP is only used if the cookie is marked as insecure.

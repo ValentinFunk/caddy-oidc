@@ -31,6 +31,7 @@ type CSRFToken struct {
 type OAuth2Client interface {
 	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	Scopes() []string
 }
 
 // oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange
@@ -42,6 +43,10 @@ type oauth2ConfigWithHTTPClient struct {
 func (c *oauth2ConfigWithHTTPClient) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
 	return c.Config.Exchange(ctx, code, opts...)
+}
+
+func (c *oauth2ConfigWithHTTPClient) Scopes() []string {
+	return c.Config.Scopes
 }
 
 type UserInfoClient interface {
@@ -59,6 +64,7 @@ type Authenticator struct {
 	log         *zap.Logger
 	redirectUri *url.URL
 	clock       func() time.Time
+	issuer      string
 	verifier    *oidc.IDTokenVerifier
 	uid         string
 	claims      []string
@@ -309,4 +315,49 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, redirectUri, http.StatusFound)
 
 	return nil
+}
+
+// Realm returns the realm for this authenticator based on the cookie domain.
+// If the cookie domain is empty, then the real is based on the request host.
+// https://datatracker.ietf.org/doc/html/rfc2617#section-1.2
+func (au *Authenticator) Realm(r *http.Request) string {
+	var requestUrl = RequestUrl(r)
+	var domain = au.cookie.Domain
+	if domain == "" {
+		domain = requestUrl.Host
+	}
+
+	var scheme = "https"
+	if requestUrl.Scheme == "http" && au.cookie.Insecure {
+		scheme = "http"
+	}
+
+	return fmt.Sprintf("%s://%s", scheme, domain)
+}
+
+// ProtectedResourceMetadata returns the OAuth protected resource metadata for this authenticator.
+func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) *OAuthProtectedResource {
+	return &OAuthProtectedResource{
+		Resource:        au.Realm(r),
+		ScopesSupported: au.oauth2.Scopes(),
+		AuthorizationServers: []string{
+			au.issuer,
+		},
+	}
+}
+
+const WellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource"
+
+// ServeHTTPOAuthProtectedResource returns the OAuth protected resource metadata for the endpoint
+// .well-known/oauth-protected-resource
+func (au *Authenticator) ServeHTTPOAuthProtectedResource(rw http.ResponseWriter, r *http.Request) error {
+	var rs = au.ProtectedResourceMetadata(r)
+
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusOK)
+
+	enc := json.NewEncoder(rw)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(rs)
 }

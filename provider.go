@@ -210,6 +210,7 @@ func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
 		clock:       time.Now,
 		cookies:     securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
 		cookie:      m.Cookie,
+		issuer:      m.Issuer,
 	}
 
 	authorizer.log.Debug("performing OIDC discovery")
