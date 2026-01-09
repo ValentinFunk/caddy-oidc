@@ -2,7 +2,6 @@ package caddy_oidc
 
 import (
 	"bytes"
-	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -135,8 +134,8 @@ func (ir *IpRange) MarshalText() ([]byte, error) {
 }
 
 type RequestValue struct {
-	Name  string  `json:"name"`
-	Value *string `json:"value,omitempty"`
+	Name  string    `json:"name"`
+	Value *Wildcard `json:"value,omitempty"`
 }
 
 func (rv *RequestValue) String() string {
@@ -144,7 +143,7 @@ func (rv *RequestValue) String() string {
 	s.WriteString(rv.Name)
 	if rv.Value != nil {
 		s.WriteString("=")
-		s.WriteString(*rv.Value)
+		s.WriteString((string)(*rv.Value))
 	}
 
 	return s.String()
@@ -164,7 +163,7 @@ func (rv *RequestValue) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	name, value, ok := strings.Cut(d.Val(), "=")
 	if ok {
 		rv.Name = name
-		rv.Value = &value
+		rv.Value = (*Wildcard)(&value)
 	}
 
 	return nil
@@ -175,7 +174,7 @@ func (rv *RequestValue) MatchValues(values url.Values) bool {
 		return values.Has(rv.Name)
 	}
 
-	return subtle.ConstantTimeCompare([]byte(values.Get(rv.Name)), []byte(*rv.Value)) == 1
+	return rv.Value.Match(values.Get(rv.Name))
 }
 
 func (rv *RequestValue) MatchHeader(header http.Header) bool {
@@ -184,7 +183,7 @@ func (rv *RequestValue) MatchHeader(header http.Header) bool {
 		return ok
 	}
 
-	return subtle.ConstantTimeCompare([]byte(header.Get(rv.Name)), []byte(*rv.Value)) == 1
+	return rv.Value.Match(header.Get(rv.Name))
 }
 
 type RequestMatcher struct {

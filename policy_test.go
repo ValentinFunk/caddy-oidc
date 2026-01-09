@@ -85,7 +85,7 @@ func TestRequestMatcher_UnmarshalCaddyfile(t *testing.T) {
 			}`,
 			expect: RequestMatcher{
 				Query: []*RequestValue{
-					{Name: "foo", Value: &bar},
+					{Name: "foo", Value: (*Wildcard)(&bar)},
 					{Name: "bar", Value: nil},
 				},
 			},
@@ -97,7 +97,7 @@ func TestRequestMatcher_UnmarshalCaddyfile(t *testing.T) {
 			}`,
 			expect: RequestMatcher{
 				Header: []*RequestValue{
-					{Name: "foo", Value: &bar},
+					{Name: "foo", Value: (*Wildcard)(&bar)},
 					{Name: "bar", Value: nil},
 				},
 			},
@@ -292,6 +292,18 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			expect: Permit,
 		},
 		{
+			name: "allow header with value (wildcard)",
+			input: `{
+				allow {
+					header Referer=https://example.com/*
+				}
+			}`,
+			session: &Session{
+				Uid: "test@example.com",
+			},
+			expect: Permit,
+		},
+		{
 			name: "deny query not equal",
 			input: `{
 				allow {
@@ -376,6 +388,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 
 			r := httptest.NewRequest("GET", "/?foo=bar", nil)
 			r.Header.Set("X-Api-Key", "xyz")
+			r.Header.Set("Referer", "https://example.com/page?q=123")
 			r = r.WithContext(context.WithValue(r.Context(), caddyhttp.VarsCtxKey, map[string]any{
 				caddyhttp.ClientIPVarKey: "127.0.0.1",
 			}))
