@@ -241,3 +241,25 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) 
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 	assert.Equal(t, "{\n  \"resource\": \"https://example.com\",\n  \"authorization_servers\": [\n    \"https://openid/example\"\n  ],\n  \"scopes_supported\": [\n    \"openid\",\n    \"profile\",\n    \"email\",\n    \"offline_access\"\n  ]\n}\n", w.Body.String())
 }
+
+func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *testing.T) {
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Authenticator, error) {
+			pr := GenerateTestAuthenticator()
+			pr.protectedResource.Disable = true
+			return pr, nil
+		}),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil)
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.Equal(t, 0, h.calls)
+
+	var ce caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &ce) {
+		assert.Equal(t, http.StatusNotFound, ce.StatusCode)
+	}
+}

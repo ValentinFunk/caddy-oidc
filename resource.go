@@ -3,7 +3,51 @@ package caddy_oidc
 import (
 	"fmt"
 	"strings"
+
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
+
+var _ caddyfile.Unmarshaler = (*ProtectedResourceMetadataConfiguration)(nil)
+
+type ProtectedResourceMetadataConfiguration struct {
+	Disable bool   `json:"disable"`
+	Realm   string `json:"realm,omitempty"`
+}
+
+// UnmarshalCaddyfile sets up the ProtectedResourceMetadataConfiguration from Caddyfile tokens.
+/* syntax
+protected_resource_metadata disable | {
+	realm [<realm>]
+}
+*/
+func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	if !d.Next() {
+		return d.SyntaxErr("protected_resource_metadata directive requires arguments")
+	}
+
+	if d.NextArg() {
+		if d.Val() == "off" {
+			c.Disable = true
+			return nil
+		}
+		return d.ArgErr()
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "realm":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+
+			c.Realm = d.Val()
+		default:
+			return fmt.Errorf("unrecognized protected_resource_metadata subdirective '%s'", d.Val())
+		}
+	}
+
+	return nil
+}
 
 // OAuthProtectedResource is the JSON payload sent from /.well-known/oauth-protected-resource
 // or advertised in WWW-Authenticate on 401 responses.

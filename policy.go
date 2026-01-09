@@ -252,7 +252,7 @@ func (p *RequestMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				p.Claims[name] = append(p.Claims[name], Wildcard(value))
 			}
 		default:
-			return d.Errf("unrecognized subdirective '%s'", d.Val())
+			return d.Errf("unrecognized policy subdirective '%s'", d.Val())
 		}
 	}
 

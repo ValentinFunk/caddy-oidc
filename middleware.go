@@ -139,7 +139,10 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 				return au.StartLogin(rw, r)
 			}
 
-			rw.Header().Set("WWW-Authenticate", au.ProtectedResourceMetadata(r).WWWAuthenticate())
+			if rs, ok := au.ProtectedResourceMetadata(r); ok {
+				rw.Header().Set("WWW-Authenticate", rs.WWWAuthenticate())
+			}
+
 			return caddyhttp.Error(http.StatusUnauthorized, ErrAccessDenied)
 		}
 	default:

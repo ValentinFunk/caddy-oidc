@@ -36,15 +36,16 @@ var _ caddyfile.Unmarshaler = (*OIDCProviderModule)(nil)
 
 // OIDCProviderModule holds the configuration for an OIDC provider
 type OIDCProviderModule struct {
-	Issuer                string   `json:"issuer"`
-	ClientID              string   `json:"client_id"`
-	SecretKey             string   `json:"secret_key"`
-	RedirectURI           string   `json:"redirect_uri,omitempty"`
-	TLSInsecureSkipVerify bool     `json:"tls_insecure_skip_verify,omitempty"`
-	Cookie                *Cookies `json:"cookie,omitempty"`
-	Scope                 []string `json:"scope,omitempty"`
-	Username              string   `json:"username,omitempty"`
-	Claims                []string `json:"claims,omitempty"`
+	Issuer                    string                                  `json:"issuer"`
+	ClientID                  string                                  `json:"client_id"`
+	SecretKey                 string                                  `json:"secret_key"`
+	RedirectURI               string                                  `json:"redirect_uri,omitempty"`
+	TLSInsecureSkipVerify     bool                                    `json:"tls_insecure_skip_verify,omitempty"`
+	Cookie                    *Cookies                                `json:"cookie,omitempty"`
+	ProtectedResourceMetadata *ProtectedResourceMetadataConfiguration `json:"protected_resource_metadata,omitempty"`
+	Scope                     []string                                `json:"scope,omitempty"`
+	Username                  string                                  `json:"username,omitempty"`
+	Claims                    []string                                `json:"claims,omitempty"`
 }
 
 func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
@@ -66,14 +67,8 @@ func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
 	scope [<scope>...]
 	username <username>
 	claim [<claim>...]
-	cookie <name> | {
-		name <name>
-		same_site <same_site>
-		insecure
-		domain <domain>
-		path <path>
-
-	}
+	protected_resource <protected_resource>
+	cookie <cookie>
 }
 */
 func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -102,7 +97,14 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "cookie":
 			m.Cookie = new(Cookies)
 			*m.Cookie = DefaultCookieOptions // Apply defaults
+			d.Prev()
 			if err := m.Cookie.UnmarshalCaddyfile(d); err != nil {
+				return err
+			}
+		case "protected_resource_metadata":
+			m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
+			d.Prev()
+			if err := m.ProtectedResourceMetadata.UnmarshalCaddyfile(d); err != nil {
 				return err
 			}
 		case "tls_insecure_skip_verify":
@@ -117,11 +119,10 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "claim":
 			m.Claims = append(m.Claims, d.RemainingArgs()...)
 		default:
-			return d.Errf("unrecognized subdirective '%s'", d.Val())
+			return d.Errf("unrecognized oidc subdirective '%s'", d.Val())
 		}
 	}
 
-	caddy.Log().Info("parsed oidc provider", zap.Any("config", m))
 	return nil
 }
 
@@ -132,6 +133,10 @@ func (m *OIDCProviderModule) Provision(_ caddy.Context) error {
 	if m.Cookie == nil {
 		m.Cookie = new(Cookies)
 		*m.Cookie = DefaultCookieOptions
+	}
+
+	if m.ProtectedResourceMetadata == nil {
+		m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
 	}
 
 	if m.Scope == nil {
@@ -204,13 +209,14 @@ func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
 	httpClient := retryClient.StandardClient()
 
 	var authorizer = &Authenticator{
-		log:         log,
-		redirectUri: redirectUri,
-		uid:         m.Username,
-		clock:       time.Now,
-		cookies:     securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
-		cookie:      m.Cookie,
-		issuer:      m.Issuer,
+		log:               log,
+		redirectUri:       redirectUri,
+		uid:               m.Username,
+		clock:             time.Now,
+		cookies:           securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
+		cookie:            m.Cookie,
+		protectedResource: m.ProtectedResourceMetadata,
+		issuer:            m.Issuer,
 	}
 
 	authorizer.log.Debug("performing OIDC discovery")

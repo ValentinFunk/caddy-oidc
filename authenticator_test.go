@@ -54,11 +54,12 @@ func GenerateTestAuthenticator() *Authenticator {
 		redirectUri: &url.URL{
 			Path: "/oauth2/callback",
 		},
-		log:     zap.NewNop(),
-		uid:     DefaultUsernameClaim,
-		issuer:  "https://openid/example",
-		claims:  []string{"email", "role"},
-		cookies: securecookie.New([]byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm"), []byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm")),
+		protectedResource: new(ProtectedResourceMetadataConfiguration),
+		log:               zap.NewNop(),
+		uid:               DefaultUsernameClaim,
+		issuer:            "https://openid/example",
+		claims:            []string{"email", "role"},
+		cookies:           securecookie.New([]byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm"), []byte("VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm")),
 		verifier: oidc.NewVerifier("http://openid/example", TestKeySet{}, &oidc.Config{
 			ClientID:             "xyz",
 			SupportedSigningAlgs: []string{"HS256"},
@@ -249,6 +250,12 @@ func TestAuthenticator_Realm(t *testing.T) {
 		r := httptest.NewRequest("GET", "http://subdomain.example.com/endpoint?x=y", nil)
 		assert.Equal(t, "https://example.com", pr.Realm(r))
 	})
+	t.Run("with explicit realm", func(t *testing.T) {
+		pr := GenerateTestAuthenticator()
+		pr.protectedResource.Realm = "https://realm"
+		r := httptest.NewRequest("GET", "https://example.com", nil)
+		assert.Equal(t, "https://realm", pr.Realm(r))
+	})
 }
 
 func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
@@ -256,7 +263,8 @@ func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
 
 	r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
 
-	md := pr.ProtectedResourceMetadata(r)
+	md, ok := pr.ProtectedResourceMetadata(r)
+	assert.True(t, ok)
 	assert.EqualValues(t, &OAuthProtectedResource{
 		Resource:        "https://example.com",
 		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},

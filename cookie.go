@@ -91,40 +91,59 @@ type Cookies struct {
 	Path     string   `json:"path"`
 }
 
+// UnmarshalCaddyfile sets up the Cookies from Caddyfile tokens.
+/* syntax
+ cookie <name> | {
+	name <name>
+	same_site <same_site>
+	insecure
+	domain <domain>
+	path <path>
+ }
+*/
 func (o *Cookies) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
+	if !d.Next() {
+		return d.SyntaxErr("cookie directive requires arguments")
+	}
+
+	// If there's an argument, it must be the name (and no block follows)
+	if d.NextArg() {
+		o.Name = d.Val()
 		if d.NextArg() {
-			o.Name = d.Val()
+			return d.ArgErr()
 		}
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "name":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				o.Name = d.Val()
-			case "same_site":
-				err := o.SameSite.UnmarshalCaddyfile(d)
-				if err != nil {
-					return err
-				}
-			case "insecure":
-				o.Insecure = true
-			case "domain":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				o.Domain = d.Val()
-			case "path":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				o.Path = d.Val()
-			default:
-				return d.Errf("unrecognized cookie subdirective: %s", d.Val())
+		return nil
+	}
+
+	for nesting := d.Nesting(); d.NextBlock(nesting); {
+		switch d.Val() {
+		case "name":
+			if !d.NextArg() {
+				return d.ArgErr()
 			}
+			o.Name = d.Val()
+		case "same_site":
+			err := o.SameSite.UnmarshalCaddyfile(d)
+			if err != nil {
+				return err
+			}
+		case "insecure":
+			o.Insecure = true
+		case "domain":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			o.Domain = d.Val()
+		case "path":
+			if !d.NextArg() {
+				return d.ArgErr()
+			}
+			o.Path = d.Val()
+		default:
+			return d.Errf("unrecognized cookie subdirective: %s", d.Val())
 		}
 	}
+
 	return nil
 }
 
