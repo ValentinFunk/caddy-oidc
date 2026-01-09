@@ -128,7 +128,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth(t *testing.T) {
 
 	c, err := http.ParseSetCookie(w.Header().Get("Set-Cookie"))
 	if assert.NoError(t, err) {
-		assert.Equal(t, fmt.Sprintf("%s|%s", "caddy", redir.Query().Get("state")), c.Name)
+		assert.Equal(t, fmt.Sprintf("%s|%s", "session", redir.Query().Get("state")), c.Name)
 	}
 }
 

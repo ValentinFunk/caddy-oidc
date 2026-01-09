@@ -2,6 +2,7 @@ package caddy_oidc
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"net/netip"
 	"testing"
@@ -98,6 +99,18 @@ func TestRequestMatcher_UnmarshalCaddyfile(t *testing.T) {
 				Header: []*RequestValue{
 					{Name: "foo", Value: &bar},
 					{Name: "bar", Value: nil},
+				},
+			},
+		},
+		{
+			name: "claims",
+			input: `{
+				claim role=read:* role=write email=*@example.com
+			}`,
+			expect: RequestMatcher{
+				Claims: map[string][]Wildcard{
+					"role":  {"read:*", "write"},
+					"email": {"*@example.com"},
 				},
 			},
 		},
@@ -287,6 +300,66 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			}`,
 			session: &Session{
 				Uid: "test@example.com",
+			},
+			expect: RejectImplicit,
+		},
+		{
+			name: "match claim simple",
+			input: `{
+				allow {
+					claim role=read
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"role": "read"}`),
+			},
+			expect: Permit,
+		},
+		{
+			name: "match claim simple not equal",
+			input: `{
+				allow {
+					claim role=write
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"role": "read"}`),
+			},
+			expect: RejectImplicit,
+		},
+		{
+			name: "match claim in array",
+			input: `{
+				allow {
+					claim role=write
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"role": ["read", "write"]}`),
+			},
+			expect: Permit,
+		},
+		{
+			name: "match claim wildcard",
+			input: `{
+				allow {
+					claim role=read:*
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"role": ["read:api", "read:admin"]}`),
+			},
+			expect: Permit,
+		},
+		{
+			name: "match claim different type",
+			input: `{
+				allow {
+					claim x=1
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
 			},
 			expect: RejectImplicit,
 		},

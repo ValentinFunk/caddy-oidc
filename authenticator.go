@@ -2,6 +2,7 @@ package caddy_oidc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	"github.com/gorilla/securecookie"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
@@ -45,17 +48,65 @@ type UserInfoClient interface {
 	UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*oidc.UserInfo, error)
 }
 
+// A ClaimsDecoder is a type that can decode arbitrary claims into a value using JSON.
+// The value might be a json.RawMessage.
+type ClaimsDecoder interface {
+	Claims(v any) error
+}
+
 // Authenticator holds the built configuration for an OIDC provider and authentication logic
 type Authenticator struct {
 	log         *zap.Logger
 	redirectUri *url.URL
 	clock       func() time.Time
 	verifier    *oidc.IDTokenVerifier
-	uid         UidClaim
+	uid         string
+	claims      []string
 	userInfo    UserInfoClient
 	oauth2      OAuth2Client
 	cookie      *Cookies
 	cookies     *securecookie.SecureCookie
+}
+
+// SessionFromClaims extracts a session from claims contained within the given ClaimsDecoder.
+func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, error) {
+	// A bit of a hack to extract the original claims from the decoder
+	var rawClaims *json.RawMessage
+	err := claims.Claims(&rawClaims)
+	if err != nil {
+		return nil, err
+	}
+
+	uid := gjson.GetBytes(*rawClaims, au.uid)
+	if !uid.Exists() || uid.Type != gjson.String {
+		return nil, fmt.Errorf("missing claim '%s' required for session username", au.uid)
+	}
+
+	session := &Session{
+		Uid:    uid.String(),
+		Claims: json.RawMessage(`{}`),
+	}
+
+	// Extract expiration time from claims
+	exp := gjson.GetBytes(*rawClaims, "exp")
+	if exp.Exists() && exp.Type == gjson.Number {
+		if expUnix := exp.Int(); expUnix > 0 {
+			session.ExpiresAt = expUnix
+		}
+	}
+
+	// Extract claims we want to store in the session cookie
+	extract := gjson.GetManyBytes(*rawClaims, au.claims...)
+	for i, claim := range extract {
+		if claim.Exists() {
+			session.Claims, err = sjson.SetRawBytes(session.Claims, au.claims[i], []byte(claim.Raw))
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return session, nil
 }
 
 // SessionFromAuthorizationHeader extracts the session an access or ID token parsed from the request Authorization header.
@@ -76,15 +127,7 @@ func (au *Authenticator) SessionFromAuthorizationHeader(r *http.Request) (*Sessi
 		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
 
-	uid, err := au.uid.FromClaims(id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract uid from claims: %w", err)
-	}
-
-	return &Session{
-		Uid:       uid,
-		ExpiresAt: id.Expiry.Unix(),
-	}, nil
+	return au.SessionFromClaims(id)
 }
 
 // SessionFromCookie extracts the session from the secure request cookie.
@@ -242,12 +285,13 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Generate the session cookie and set it
-	uid, err := au.uid.FromClaims(userInfo)
+	session, err := au.SessionFromClaims(userInfo)
 	if err != nil {
-		return fmt.Errorf("failed to extract uid from user info (missing scope?): %w", err)
+		return fmt.Errorf("failed to extract session from user info: %w", err)
 	}
 
-	session := Session{Uid: uid, ExpiresAt: response.Expiry.Unix()}
+	// Ensure the expiry information is taken from the ID token
+	session.ExpiresAt = response.Expiry.Unix()
 
 	sessionCookie, err := session.HttpCookie(au.cookie, au.cookies)
 	if err != nil {

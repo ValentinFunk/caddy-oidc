@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/tidwall/gjson"
 )
 
 type Action uint8
@@ -187,11 +188,12 @@ func (rv *RequestValue) MatchHeader(header http.Header) bool {
 }
 
 type RequestMatcher struct {
-	Anonymous bool            `json:"anonymous,omitempty"`
-	User      []Wildcard      `json:"user,omitempty"`
-	Client    []IpRange       `json:"client,omitempty"`
-	Query     []*RequestValue `json:"query,omitempty"`
-	Header    []*RequestValue `json:"header,omitempty"`
+	Anonymous bool                  `json:"anonymous,omitempty"`
+	User      []Wildcard            `json:"user,omitempty"`
+	Client    []IpRange             `json:"client,omitempty"`
+	Query     []*RequestValue       `json:"query,omitempty"`
+	Header    []*RequestValue       `json:"header,omitempty"`
+	Claims    map[string][]Wildcard `json:"claims,omitempty"`
 }
 
 func (p *RequestMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -237,20 +239,45 @@ func (p *RequestMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				p.Header = append(p.Header, &rv)
 			}
+		case "claim":
+			for d.NextArg() {
+				name, value, ok := strings.Cut(d.Val(), "=")
+				if !ok {
+					return d.SyntaxErr("a name=value pair is required for claim")
+				}
+
+				if p.Claims == nil {
+					p.Claims = make(map[string][]Wildcard)
+				}
+
+				p.Claims[name] = append(p.Claims[name], Wildcard(value))
+			}
+		default:
+			return d.Errf("unrecognized subdirective '%s'", d.Val())
 		}
 	}
 
 	return nil
 }
 
-// matchOne returns true if any element in the match slice matches the find value.
-func matchOne[T any, S ~[]T, V any](match S, find V, predicate func(m T, v V) bool) bool {
+// Any returns true if any element in the match slice matches the find value.
+func Any[T any, S ~[]T, V any](match S, find V, predicate func(m T, v V) bool) bool {
 	for _, m := range match {
 		if predicate(m, find) {
 			return true
 		}
 	}
 	return false
+}
+
+// All returns true if all elements in the match slice match the find value or if the slice is empty.
+func All[T any, S ~[]T, V any](match S, find V, predicate func(m T, v V) bool) bool {
+	for _, m := range match {
+		if !predicate(m, find) {
+			return false
+		}
+	}
+	return true
 }
 
 // Evaluate evaluates the policy and returns true if the request is allowed.
@@ -260,7 +287,7 @@ func (p *RequestMatcher) Evaluate(r *http.Request, s *Session) (bool, error) {
 		return false, nil
 	}
 
-	if len(p.User) > 0 && !matchOne(p.User, s.Uid, Wildcard.Match) {
+	if len(p.User) > 0 && !Any(p.User, s.Uid, Wildcard.Match) {
 		return false, nil
 	}
 
@@ -270,16 +297,49 @@ func (p *RequestMatcher) Evaluate(r *http.Request, s *Session) (bool, error) {
 			return false, err
 		}
 
-		if !matchOne(p.Client, client, IpRange.Contains) {
+		if !Any(p.Client, client, IpRange.Contains) {
 			return false, nil
 		}
 	}
 
-	if len(p.Query) > 0 && !matchOne(p.Query, r.URL.Query(), (*RequestValue).MatchValues) {
+	if len(p.Query) > 0 && !Any(p.Query, r.URL.Query(), (*RequestValue).MatchValues) {
 		return false, nil
 	}
-	if len(p.Header) > 0 && !matchOne(p.Header, r.Header, (*RequestValue).MatchHeader) {
+	if len(p.Header) > 0 && !Any(p.Header, r.Header, (*RequestValue).MatchHeader) {
 		return false, nil
+	}
+
+	if len(p.Claims) > 0 {
+		// Any desired claims cannot match empty session claims
+		if len(s.Claims) == 0 {
+			return false, nil
+		}
+
+		for name, values := range p.Claims {
+			sessionValue := gjson.GetBytes(s.Claims, name)
+			if !sessionValue.Exists() {
+				// Impossible match, session is missing claim
+				return false, nil
+			}
+
+			var claimDoesMatch = false
+			switch {
+			case sessionValue.Type == gjson.String:
+				claimDoesMatch = All(values, sessionValue.String(), Wildcard.Match)
+			case sessionValue.IsArray():
+				claimDoesMatch = All(values, sessionValue.Array(), func(m Wildcard, v []gjson.Result) bool {
+					return Any(v, m, func(m gjson.Result, v Wildcard) bool {
+						return m.Exists() && m.Type == gjson.String && v.Match(m.String())
+					})
+				})
+			default:
+				// Any other claim type is not supported
+			}
+
+			if !claimDoesMatch {
+				return false, nil
+			}
+		}
 	}
 
 	return true, nil

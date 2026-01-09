@@ -24,16 +24,24 @@ func (TestKeySet) VerifySignature(ctx context.Context, token string) (payload []
 	return jws.Verify(testKey)
 }
 
+type ExtendedClaims struct {
+	jwt.Claims
+	Email string `json:"email"`
+}
+
 func GenerateTestJWT() string {
 	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: testKey}, (&jose.SignerOptions{}).WithType("JWT"))
 	if err != nil {
 		panic(err)
 	}
 
-	cl := jwt.Claims{
-		Subject:  "test",
-		Issuer:   "http://openid/example",
-		Audience: jwt.Audience{"xyz"},
+	cl := ExtendedClaims{
+		Claims: jwt.Claims{
+			Subject:  "test",
+			Issuer:   "http://openid/example",
+			Audience: jwt.Audience{"xyz"},
+		},
+		Email: "x@example.org",
 	}
 
 	raw, err := jwt.Signed(sig).Claims(cl).Serialize()
@@ -60,6 +68,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 				tls_insecure_skip_verify
 				scope openid email profile
 				username email
+				claim email role
 				cookie {
 					name session_id
 					same_site strict
@@ -75,6 +84,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 				TLSInsecureSkipVerify: true,
 				Scope:                 []string{"openid", "email", "profile"},
 				Username:              "email",
+				Claims:                []string{"email", "role"},
 				Cookie: &Cookies{
 					Name:     "session_id",
 					SameSite: SameSite{http.SameSiteStrictMode},
