@@ -256,9 +256,10 @@ func TestAuthenticator_ProtectedResourceMetadata_WithAudience(t *testing.T) {
 	md, ok := pr.ProtectedResourceMetadata(r)
 	assert.True(t, ok)
 	assert.EqualValues(t, &OAuthProtectedResource{
-		Resource:        "http://example.com",
-		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},
-		Audience:        "xyz",
+		Resource:               "http://example.com",
+		ScopesSupported:        []string{"openid", "profile", "email", "offline_access"},
+		BearerMethodsSupported: []string{"header"},
+		Audience:               "xyz",
 		AuthorizationServers: []string{
 			"https://openid/example",
 		},
