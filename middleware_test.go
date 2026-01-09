@@ -10,30 +10,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestShouldStartLogin(t *testing.T) {
-	t.Run("incorrect method", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodPost, "/", nil)
-		assert.False(t, ShouldStartLogin(r))
-	})
-	t.Run("can't accept", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.Header.Set("Accept", "application/json")
-		assert.False(t, ShouldStartLogin(r))
-	})
-	t.Run("Sec-Fetch-Dest", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.Header.Set("Sec-Fetch-Dest", "document")
-		assert.True(t, ShouldStartLogin(r))
-	})
-	t.Run("accept HTML", func(t *testing.T) {
-		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.Header.Set("Accept", "text/html")
-		assert.True(t, ShouldStartLogin(r))
-	})
-}
 
 func TestOIDCMiddleware_UnmarshalCaddyfile(t *testing.T) {
 	tests := []struct {
@@ -132,6 +111,28 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth(t *testing.T) {
 	}
 }
 
+func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.Equal(t, 0, h.calls)
+
+	var ce caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &ce) {
+		assert.Equal(t, http.StatusUnauthorized, ce.StatusCode)
+	}
+
+	wwwAuthenticate := w.Header().Get("WWW-Authenticate")
+	assert.NotEmpty(t, wwwAuthenticate)
+	assert.Equal(t, `Bearer resource_metadata="http://example.com/.well-known/oauth-protected-resource", scope="openid profile email offline_access"`, wwwAuthenticate)
+}
+
 func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_NoPolicy(t *testing.T) {
 	auth := &OIDCMiddleware{
 		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
@@ -222,4 +223,63 @@ func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_AllowUser_WithDeny(t 
 
 	err := auth.ServeHTTP(w, r, h)
 	assert.ErrorIs(t, err, ErrAccessDenied)
+}
+
+func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) {
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Authenticator, error) {
+			pr := GenerateTestAuthenticator()
+			pr.protectedResource.Audience = true
+			return pr, nil
+		}),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil)
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, h.calls)
+
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	assert.Equal(t, `{
+  "resource": "http://example.com",
+  "authorization_servers": [
+    "https://openid/example"
+  ],
+  "scopes_supported": [
+    "openid",
+    "profile",
+    "email",
+    "offline_access"
+  ],
+  "bearer_methods_supported": [
+    "header"
+  ],
+  "audience": "xyz"
+}
+`, w.Body.String())
+}
+
+func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *testing.T) {
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Authenticator, error) {
+			pr := GenerateTestAuthenticator()
+			pr.protectedResource.Disable = true
+			return pr, nil
+		}),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil)
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.Equal(t, 0, h.calls)
+
+	var ce caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &ce) {
+		assert.Equal(t, http.StatusNotFound, ce.StatusCode)
+	}
 }

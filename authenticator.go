@@ -31,6 +31,8 @@ type CSRFToken struct {
 type OAuth2Client interface {
 	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	Scopes() []string
+	ClientID() string
 }
 
 // oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange
@@ -42,6 +44,14 @@ type oauth2ConfigWithHTTPClient struct {
 func (c *oauth2ConfigWithHTTPClient) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
 	return c.Config.Exchange(ctx, code, opts...)
+}
+
+func (c *oauth2ConfigWithHTTPClient) Scopes() []string {
+	return c.Config.Scopes
+}
+
+func (c *oauth2ConfigWithHTTPClient) ClientID() string {
+	return c.Config.ClientID
 }
 
 type UserInfoClient interface {
@@ -56,16 +66,18 @@ type ClaimsDecoder interface {
 
 // Authenticator holds the built configuration for an OIDC provider and authentication logic
 type Authenticator struct {
-	log         *zap.Logger
-	redirectUri *url.URL
-	clock       func() time.Time
-	verifier    *oidc.IDTokenVerifier
-	uid         string
-	claims      []string
-	userInfo    UserInfoClient
-	oauth2      OAuth2Client
-	cookie      *Cookies
-	cookies     *securecookie.SecureCookie
+	log               *zap.Logger
+	redirectUri       *url.URL
+	clock             func() time.Time
+	issuer            string
+	protectedResource *ProtectedResourceMetadataConfiguration
+	verifier          *oidc.IDTokenVerifier
+	uid               string
+	claims            []string
+	userInfo          UserInfoClient
+	oauth2            OAuth2Client
+	cookie            *Cookies
+	cookies           *securecookie.SecureCookie
 }
 
 // SessionFromClaims extracts a session from claims contained within the given ClaimsDecoder.
@@ -309,4 +321,51 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, redirectUri, http.StatusFound)
 
 	return nil
+}
+
+// ProtectedResourceMetadata returns the OAuth protected resource metadata for this authenticator.
+// If protected resource metadata is not enabled, then false is returned.
+func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) (*OAuthProtectedResource, bool) {
+	if au.protectedResource.Disable {
+		return nil, false
+	}
+
+	var ru = RequestUrl(r)
+	var md = &OAuthProtectedResource{
+		Resource:        fmt.Sprintf("%s://%s", ru.Scheme, ru.Host),
+		ScopesSupported: au.oauth2.Scopes(),
+		AuthorizationServers: []string{
+			au.issuer,
+		},
+		// OIDC middleware only supports bearer authentication via the Authorization header
+		BearerMethodsSupported: []string{
+			"header",
+		},
+	}
+
+	if au.protectedResource.Audience {
+		md.Audience = au.oauth2.ClientID()
+	}
+
+	return md, true
+}
+
+const WellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource"
+
+// ServeHTTPOAuthProtectedResource returns the OAuth protected resource metadata for the endpoint
+// .well-known/oauth-protected-resource.
+// If the endpoint is disabled, then a 404 not found response is returned.
+func (au *Authenticator) ServeHTTPOAuthProtectedResource(rw http.ResponseWriter, r *http.Request) error {
+	rs, ok := au.ProtectedResourceMetadata(r)
+	if !ok {
+		return caddyhttp.Error(http.StatusNotFound, errors.New("protected resource metadata is disabled"))
+	}
+
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusOK)
+
+	enc := json.NewEncoder(rw)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(rs)
 }

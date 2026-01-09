@@ -9,7 +9,6 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/munnerz/goautoneg"
 )
 
 func init() {
@@ -94,23 +93,6 @@ func (mw *OIDCMiddleware) Validate() error {
 	return nil
 }
 
-// ShouldStartLogin returns true if the request should start the authorization flow on a failed authentication attempt
-// based on if the request is likely coming from a browser.
-func ShouldStartLogin(r *http.Request) bool {
-	if r.Method != http.MethodGet {
-		return false
-	}
-
-	dest := r.Header.Get("Sec-Fetch-Dest")
-	if dest != "" {
-		return dest == "document" || dest == "iframe"
-	}
-
-	// Fallback for older browsers: check Accept header for HTML.
-	// If the browser doesn't send Sec-Fetch-Dest, we check if it's looking for HTML.
-	return goautoneg.Negotiate(r.Header.Get("Accept"), []string{"text/html"}) == "text/html"
-}
-
 func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	au, err := mw.au.Get(r.Context())
 	if err != nil {
@@ -120,6 +102,11 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 	// Check if the request is an OAuth callback
 	if r.Method == http.MethodGet && r.URL.Path == au.redirectUri.Path {
 		return au.HandleCallback(rw, r, next)
+	}
+
+	// Check for supported well-knowns
+	if r.Method == http.MethodGet && r.URL.Path == WellKnownOAuthProtectedResourcePath {
+		return au.ServeHTTPOAuthProtectedResource(rw, r)
 	}
 
 	s, err := au.Authenticate(r)
@@ -142,18 +129,26 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 	case Permit:
 		return next.ServeHTTP(rw, r)
 	case RejectExplicit:
-		return caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
 	case RejectImplicit:
 		// If the evaluation result is an implicit reject, then check if the session is anonymous.
-		// If anonymous, then start the authorization flow.
-		// In other words, if not authenticated and not otherwise explicitly denied, then start the authorization flow.
-		if s.Anonymous && ShouldStartLogin(r) {
-			return au.StartLogin(rw, r)
-		}
+		// If anonymous:
+		//		Start the authorization flow if the request is likely coming from a browser.
+		//		Otherwise, return a 401 Unauthorized error.
+		if s.Anonymous {
+			if ShouldStartLogin(r) {
+				return au.StartLogin(rw, r)
+			}
 
-		return caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
+			if rs, ok := au.ProtectedResourceMetadata(r); ok {
+				rw.Header().Set("WWW-Authenticate", rs.WWWAuthenticate())
+			}
+
+			return caddyhttp.Error(http.StatusUnauthorized, ErrAccessDenied)
+		}
 	default:
 		// impossible
 		panic("invalid policy evaluation result")
 	}
+
+	return caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
 }

@@ -11,6 +11,7 @@ configured individually, perform authentication and authorization at the Caddy l
 - Centralized access logging that includes user ID
 - Easier integration with security tools like fail2ban, etc
 - Anonymous access and client ip-based authorization rules
+- Support for RFC9728 (OAuth 2.0 Protected Resource Metadata)
 
 # Configuration
 
@@ -54,6 +55,7 @@ example.com {
 - `claim` - (optional) A list of claims to include in the session. Used for request authorization. Any access policy
   rules that use a claim must be configured here.
 - `cookie` - (optional) Configures the cookie used to store the authentication state.
+- `protected_resource_metadata` - (optional) Configure or disable RFC9728 support.
 
 ### Cookie
 
@@ -73,6 +75,43 @@ cookie {
     name caddy
     same_site lax
     path /
+}
+```
+
+### [RFC9728](https://datatracker.ietf.org/doc/rfc9728/) Support (`protected_resource_metadata`)
+
+Caddy OIDC supports RFC9728 (OAuth 2.0 Protected Resource Metadata) to discover the OIDC provider metadata via the
+well-known URL `/.well-known/oauth-protected-resource`.
+
+If the request is unauthenticated, passes at least one `allow` rule, and the request is not made by a browser,
+then a `401 Unauthorized` response is returned with a WWW-Authenticate header conforming
+to [WWW-Authenticate Response](https://datatracker.ietf.org/doc/html/rfc9728#section-5.1).
+
+Settings can be controlled via the `oidc` directive `protected_resource_metadata`. The default behavior is to enable.
+
+```caddyfile
+# Disable RFC9728 support.
+# This makes /.well-known/oauth-protected-resource return a 404 Not Found.
+protected_resource_metadata off
+```
+
+#### Audience
+
+As a custom extension to the standard, resource metadata can be configured to include the expected token audience (
+`aud`) claim.
+
+If enabled, the metadata response will contain an additional `audience` field containing the configured client ID of the
+OIDC provider configuration.
+
+This is designed as an alternative to dynamic client registration to let another client (e.g. a CLI)
+use [JWT Exchange](https://datatracker.ietf.org/doc/html/rfc7523#section-8.2) with its own token with the OIDC provider
+and
+make requests to this server without prior knowledge of this server's OAuth configuration.
+
+```caddyfile
+# Include the expected audience field in the metadata
+protected_resource_metadata {
+    audience
 }
 ```
 

@@ -74,6 +74,9 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 					same_site strict
 					insecure
 				}
+				protected_resource_metadata {
+					audience
+				}
 			}`,
 			shouldErr: false,
 			expect: &OIDCProviderModule{
@@ -90,6 +93,10 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 					SameSite: SameSite{http.SameSiteStrictMode},
 					Insecure: true,
 					Path:     "/",
+				},
+				ProtectedResourceMetadata: &ProtectedResourceMetadataConfiguration{
+					Disable:  false,
+					Audience: true,
 				},
 			},
 		},
