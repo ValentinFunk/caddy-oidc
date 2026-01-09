@@ -98,16 +98,18 @@ protected_resource_metadata off
 #### Audience
 
 As a custom extension to the standard, resource metadata can be configured to include the expected token audience (
-`aud`) claim. If enabled, this is set to the configured client ID.
+`aud`) claim.
+
+If enabled, the metadata response will contain an additional `audience` field containing the configured client ID of the
+OIDC provider configuration.
 
 This is designed as an alternative to dynamic client registration to let another client (e.g. a CLI)
-use [JWT Exchange](https://datatracker.ietf.org/doc/html/rfc7523#section-8.2) with its own token with the OIDC provider and
+use [JWT Exchange](https://datatracker.ietf.org/doc/html/rfc7523#section-8.2) with its own token with the OIDC provider
+and
 make requests to this server without prior knowledge of this server's OAuth configuration.
 
-Unless enabled, the audience field is omitted from the metadata.
-
 ```caddyfile
-# Include the expected audience claim in the metadata
+# Include the expected audience field in the metadata
 protected_resource_metadata {
     audience
 }
