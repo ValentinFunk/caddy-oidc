@@ -36,6 +36,15 @@ func TestProtectedResourceMetadataConfiguration_UnmarshalCaddyfile(t *testing.T)
 			},
 		},
 		{
+			name: "audience",
+			input: `protected_resource_metadata {
+				audience
+			}`,
+			expect: &ProtectedResourceMetadataConfiguration{
+				Audience: true,
+			},
+		},
+		{
 			name:      "unexpected arg",
 			input:     `protected_resource_metadata value`,
 			shouldErr: true,

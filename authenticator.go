@@ -32,6 +32,7 @@ type OAuth2Client interface {
 	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	Scopes() []string
+	ClientID() string
 }
 
 // oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange
@@ -47,6 +48,10 @@ func (c *oauth2ConfigWithHTTPClient) Exchange(ctx context.Context, code string, 
 
 func (c *oauth2ConfigWithHTTPClient) Scopes() []string {
 	return c.Config.Scopes
+}
+
+func (c *oauth2ConfigWithHTTPClient) ClientID() string {
+	return c.Config.ClientID
 }
 
 type UserInfoClient interface {
@@ -348,13 +353,19 @@ func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) (*OAuthProte
 		return nil, false
 	}
 
-	return &OAuthProtectedResource{
+	var md = &OAuthProtectedResource{
 		Resource:        au.Realm(r),
 		ScopesSupported: au.oauth2.Scopes(),
 		AuthorizationServers: []string{
 			au.issuer,
 		},
-	}, true
+	}
+
+	if au.protectedResource.Audience {
+		md.Audience = au.oauth2.ClientID()
+	}
+
+	return md, true
 }
 
 const WellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource"

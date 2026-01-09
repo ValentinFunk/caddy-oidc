@@ -41,6 +41,10 @@ func (testOAuthClientImpl) Scopes() []string {
 	return []string{"openid", "profile", "email", "offline_access"}
 }
 
+func (testOAuthClientImpl) ClientID() string {
+	return "xyz"
+}
+
 func GenerateTestAuthenticator() *Authenticator {
 	return &Authenticator{
 		cookie: &Cookies{
@@ -268,6 +272,24 @@ func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
 	assert.EqualValues(t, &OAuthProtectedResource{
 		Resource:        "https://example.com",
 		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},
+		AuthorizationServers: []string{
+			"https://openid/example",
+		},
+	}, md)
+}
+
+func TestAuthenticator_ProtectedResourceMetadata_WithAudience(t *testing.T) {
+	pr := GenerateTestAuthenticator()
+	pr.protectedResource.Audience = true
+
+	r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
+
+	md, ok := pr.ProtectedResourceMetadata(r)
+	assert.True(t, ok)
+	assert.EqualValues(t, &OAuthProtectedResource{
+		Resource:        "https://example.com",
+		ScopesSupported: []string{"openid", "profile", "email", "offline_access"},
+		Audience:        "xyz",
 		AuthorizationServers: []string{
 			"https://openid/example",
 		},

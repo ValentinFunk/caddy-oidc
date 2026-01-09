@@ -10,14 +10,16 @@ import (
 var _ caddyfile.Unmarshaler = (*ProtectedResourceMetadataConfiguration)(nil)
 
 type ProtectedResourceMetadataConfiguration struct {
-	Disable bool   `json:"disable"`
-	Realm   string `json:"realm,omitempty"`
+	Disable  bool   `json:"disable"`
+	Realm    string `json:"realm,omitempty"`
+	Audience bool   `json:"audience,omitempty"`
 }
 
 // UnmarshalCaddyfile sets up the ProtectedResourceMetadataConfiguration from Caddyfile tokens.
 /* syntax
 protected_resource_metadata disable | {
 	realm [<realm>]
+	audience
 }
 */
 func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -41,6 +43,8 @@ func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile
 			}
 
 			c.Realm = d.Val()
+		case "audience":
+			c.Audience = true
 		default:
 			return fmt.Errorf("unrecognized protected_resource_metadata subdirective '%s'", d.Val())
 		}
@@ -55,6 +59,9 @@ type OAuthProtectedResource struct {
 	Resource             string   `json:"resource"`
 	AuthorizationServers []string `json:"authorization_servers"`
 	ScopesSupported      []string `json:"scopes_supported"`
+
+	// Audience is a custom extension to the OAuth Protected Resource Metadata spec.
+	Audience string `json:"audience,omitempty"`
 }
 
 // WWWAuthenticate returns the value of the WWW-Authenticate header for this resource.

@@ -78,7 +78,7 @@ cookie {
 }
 ```
 
-### RFC9728 Support (`protected_resource_metadata`)
+### [RFC9728](https://datatracker.ietf.org/doc/rfc9728/) Support (`protected_resource_metadata`)
 
 Caddy OIDC supports RFC9728 (OAuth 2.0 Protected Resource Metadata) to discover the OIDC provider metadata via the
 well-known URL `/.well-known/oauth-protected-resource`.
@@ -106,8 +106,27 @@ protected_resource_metadata off
 
 The metadata `Resource` and WWW-Authenticate realm is based on the cookie configuration and current request information.
 
+- Use the explicit realm if configured
 - If a specific cookie domain is not configured, then the realm host is the request host.
 - The realm scheme is based on the request scheme. HTTP is only used if the cookie is marked as insecure.
+
+#### Audience
+
+As a custom extension to the standard, resource metadata can be configured to include the expected token audience (
+`aud`) claim. If enabled, this is set to the configured client ID.
+
+This is designed as an alternative to dynamic client registration to let another client (e.g. a CLI)
+use [JWT Exchange](https://datatracker.ietf.org/doc/html/rfc7523#section-8.2) with its own token with the OIDC provider and
+make requests to this server without prior knowledge of this server's OAuth configuration.
+
+Unless enabled, the audience field is omitted from the metadata.
+
+```caddyfile
+# Include the expected audience claim in the metadata
+protected_resource_metadata {
+    audience
+}
+```
 
 ## Handler Directive
 
