@@ -337,6 +337,10 @@ func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) (*OAuthProte
 		AuthorizationServers: []string{
 			au.issuer,
 		},
+		// OIDC middleware only supports bearer authentication via the Authorization header
+		BearerMethodsSupported: []string{
+			"header",
+		},
 	}
 
 	if au.protectedResource.Audience {

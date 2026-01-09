@@ -48,9 +48,10 @@ func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile
 // OAuthProtectedResource is the JSON payload sent from /.well-known/oauth-protected-resource
 // or advertised in WWW-Authenticate on 401 responses.
 type OAuthProtectedResource struct {
-	Resource             string   `json:"resource"`
-	AuthorizationServers []string `json:"authorization_servers"`
-	ScopesSupported      []string `json:"scopes_supported"`
+	Resource               string   `json:"resource"`
+	AuthorizationServers   []string `json:"authorization_servers"`
+	ScopesSupported        []string `json:"scopes_supported"`
+	BearerMethodsSupported []string `json:"bearer_methods_supported,omitempty"`
 
 	// Audience is a custom extension to the OAuth Protected Resource Metadata spec.
 	Audience string `json:"audience,omitempty"`

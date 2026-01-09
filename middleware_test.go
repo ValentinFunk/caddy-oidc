@@ -227,7 +227,11 @@ func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_AllowUser_WithDeny(t 
 
 func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) {
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+		au: Defer(func() (*Authenticator, error) {
+			pr := GenerateTestAuthenticator()
+			pr.protectedResource.Audience = true
+			return pr, nil
+		}),
 	}
 
 	w := httptest.NewRecorder()
@@ -239,7 +243,23 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) 
 	assert.Equal(t, 0, h.calls)
 
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
-	assert.Equal(t, "{\n  \"resource\": \"http://example.com\",\n  \"authorization_servers\": [\n    \"https://openid/example\"\n  ],\n  \"scopes_supported\": [\n    \"openid\",\n    \"profile\",\n    \"email\",\n    \"offline_access\"\n  ]\n}\n", w.Body.String())
+	assert.Equal(t, `{
+  "resource": "http://example.com",
+  "authorization_servers": [
+    "https://openid/example"
+  ],
+  "scopes_supported": [
+    "openid",
+    "profile",
+    "email",
+    "offline_access"
+  ],
+  "bearer_methods_supported": [
+    "header"
+  ],
+  "audience": "xyz"
+}
+`, w.Body.String())
 }
 
 func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *testing.T) {
