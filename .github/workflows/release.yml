@@ -30,19 +30,48 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata (tags, labels)
+      - name: Extract Caddy version from go.mod
+        id: caddy
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Extract the version for github.com/caddyserver/caddy/v2 from go.mod
+          ver=$(awk '$1=="github.com/caddyserver/caddy/v2"{print $2}' go.mod | head -n1)
+          if [[ -z "${ver}" ]]; then
+            echo "Failed to extract Caddy version from go.mod" >&2
+            exit 1
+          fi
+          # Strip leading 'v' if present to match Docker tag format (e.g., 2.10.2)
+          ver_no_v=${ver#v}
+          echo "version=${ver_no_v}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Docker metadata (tags, labels) with Caddy suffix
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
             ghcr.io/${{ github.repository }}
+          # Add the Caddy version as a suffix to all generated tags
+          flavor: |
+            suffix=-${{ steps.caddy.outputs.version }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=ref,event=branch
             type=ref,event=pr
-            type=raw,value=latest,enable={{is_default_branch}}
+            # latest with Caddy suffix (e.g., latest-2.10.2)
+            type=raw,value=latest
+
+      - name: Extract Docker metadata (plain latest tag)
+        id: meta_plain
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+          tags: |
+            # Also publish an unsuffixed 'latest' tag
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -51,9 +80,13 @@ jobs:
           file: ./Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ steps.meta_plain.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            ${{ steps.meta_plain.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            CADDY_VERSION=latest
+            CADDY_VERSION=${{ steps.caddy.outputs.version }}
