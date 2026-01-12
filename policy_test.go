@@ -114,6 +114,15 @@ func TestRequestMatcher_UnmarshalCaddyfile(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "method",
+			input: `{
+				method get post
+			}`,
+			expect: RequestMatcher{
+				Method: []string{"get", "post"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -368,6 +377,54 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			input: `{
 				allow {
 					claim x=1
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectImplicit,
+		},
+		{
+			name: "match method",
+			input: `{
+				deny {
+					method GET
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "match method any",
+			input: `{
+				deny {
+					method POST GET
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "match method lower",
+			input: `{
+				deny {
+					method get
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "match method incorrect method",
+			input: `{
+				allow {
+					method post
 				}
 			}`,
 			session: &Session{

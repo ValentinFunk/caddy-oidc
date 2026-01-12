@@ -190,6 +190,7 @@ type RequestMatcher struct {
 	Anonymous bool                  `json:"anonymous,omitempty"`
 	User      []Wildcard            `json:"user,omitempty"`
 	Client    []IpRange             `json:"client,omitempty"`
+	Method    []string              `json:"method,omitempty"`
 	Query     []*RequestValue       `json:"query,omitempty"`
 	Header    []*RequestValue       `json:"header,omitempty"`
 	Claims    map[string][]Wildcard `json:"claims,omitempty"`
@@ -214,6 +215,8 @@ func (p *RequestMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 				p.Client = append(p.Client, ir)
 			}
+		case "method":
+			p.Method = append(p.Method, d.RemainingArgs()...)
 		case "query":
 			for d.NextArg() {
 				d.Prev()
@@ -279,6 +282,18 @@ func All[T any, S ~[]T, V any](match S, find V, predicate func(m T, v V) bool) b
 	return true
 }
 
+type lowercase string
+
+// stringToLower returns a lowercase version of s, type guarded to ensure `matchStringLower` is passed the correct value.
+func stringToLower(s string) lowercase {
+	return lowercase(strings.ToLower(s))
+}
+
+// matchStringLower returns true if the lowercase form of m matches v
+func matchStringLower(m string, v lowercase) bool {
+	return (string)(v) == strings.ToLower(m)
+}
+
 // Evaluate evaluates the policy and returns true if the request is allowed.
 // An empty policy always returns true.
 func (p *RequestMatcher) Evaluate(r *http.Request, s *Session) (bool, error) {
@@ -299,6 +314,10 @@ func (p *RequestMatcher) Evaluate(r *http.Request, s *Session) (bool, error) {
 		if !Any(p.Client, client, IpRange.Contains) {
 			return false, nil
 		}
+	}
+
+	if len(p.Method) > 0 && !Any(p.Method, stringToLower(r.Method), matchStringLower) {
+		return false, nil
 	}
 
 	if len(p.Query) > 0 && !Any(p.Query, r.URL.Query(), (*RequestValue).MatchValues) {
