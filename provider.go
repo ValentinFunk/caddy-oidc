@@ -212,6 +212,7 @@ func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
 		log:               log,
 		redirectUri:       redirectUri,
 		uid:               m.Username,
+		claims:            m.Claims,
 		clock:             time.Now,
 		cookies:           securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
 		cookie:            m.Cookie,
