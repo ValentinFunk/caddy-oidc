@@ -44,6 +44,21 @@ jobs:
             type=ref,event=pr
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Extract Caddy version from go.mod
+        id: caddy
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Extract the version for github.com/caddyserver/caddy/v2 from go.mod
+          ver=$(awk '$1=="github.com/caddyserver/caddy/v2"{print $2}' go.mod | head -n1)
+          if [[ -z "${ver}" ]]; then
+            echo "Failed to extract Caddy version from go.mod" >&2
+            exit 1
+          fi
+          # Strip leading 'v' if present to match Docker tag format (e.g., 2.10.2)
+          ver_no_v=${ver#v}
+          echo "version=${ver_no_v}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -56,4 +71,4 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            CADDY_VERSION=latest
+            CADDY_VERSION=${{ steps.caddy.outputs.version }}
