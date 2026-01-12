@@ -184,6 +184,30 @@ This allows clients to make anonymous requests to the server where desired.
 The `client` rule can be used to match requests from a specific IP address or subnet.
 Supplied as a space-separated list of CIDR notation subnets or IP addresses.
 
+#### method
+
+Match the HTTP method of the request (case-insensitive)
+
+```caddyfile
+# Allow any authenticated user to make GET requests to the API
+
+allow {
+    method get
+}
+```
+
+#### path
+
+Wildcard-match the case-sensitive path component of the request URL. Slashes do **not** delimit wildcard matching.
+
+```caddyfile
+# Allow any authenticated user to make requests to /api/*
+
+allow {
+    path /api/*
+}
+```
+
 #### query
 
 The `query` rule can be used to match requests based on query parameters, either by existence or wildcard matched value.
