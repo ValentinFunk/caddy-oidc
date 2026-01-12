@@ -191,6 +191,7 @@ type RequestMatcher struct {
 	User      []Wildcard            `json:"user,omitempty"`
 	Client    []IpRange             `json:"client,omitempty"`
 	Method    []string              `json:"method,omitempty"`
+	Path      []Wildcard            `json:"path,omitempty"`
 	Query     []*RequestValue       `json:"query,omitempty"`
 	Header    []*RequestValue       `json:"header,omitempty"`
 	Claims    map[string][]Wildcard `json:"claims,omitempty"`
@@ -217,6 +218,10 @@ func (p *RequestMatcher) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			}
 		case "method":
 			p.Method = append(p.Method, d.RemainingArgs()...)
+		case "path":
+			for _, arg := range d.RemainingArgs() {
+				p.Path = append(p.Path, Wildcard(arg))
+			}
 		case "query":
 			for d.NextArg() {
 				d.Prev()
@@ -317,6 +322,10 @@ func (p *RequestMatcher) Evaluate(r *http.Request, s *Session) (bool, error) {
 	}
 
 	if len(p.Method) > 0 && !Any(p.Method, stringToLower(r.Method), matchStringLower) {
+		return false, nil
+	}
+
+	if len(p.Path) > 0 && !Any(p.Path, r.URL.Path, Wildcard.Match) {
 		return false, nil
 	}
 

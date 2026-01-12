@@ -190,8 +190,21 @@ Match the HTTP method of the request (case-insensitive)
 
 ```caddyfile
 # Allow any authenticated user to make GET requests to the API
-alow {
+
+allow {
     method get
+}
+```
+
+#### path
+
+Wildcard-match the case-sensitive path component of the request URL. Slashes do **not** delimit wildcard matching.
+
+```caddyfile
+# Allow any authenticated user to make requests to /api/*
+
+allow {
+    path /api/*
 }
 ```
 

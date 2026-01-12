@@ -123,6 +123,15 @@ func TestRequestMatcher_UnmarshalCaddyfile(t *testing.T) {
 				Method: []string{"get", "post"},
 			},
 		},
+		{
+			name: "path",
+			input: `{
+				path /foo*
+			}`,
+			expect: RequestMatcher{
+				Path: []Wildcard{"/foo*"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -432,6 +441,42 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			},
 			expect: RejectImplicit,
 		},
+		{
+			name: "match path exact",
+			input: `{
+				deny {
+					path /foo
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "match path wildcard",
+			input: `{
+				deny {
+					path /*
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "match path wildcard unmatched",
+			input: `{
+				deny {
+					path /bar
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"x": 1}`),
+			},
+			expect: RejectImplicit,
+		},
 	}
 
 	for _, tt := range tests {
@@ -443,7 +488,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			err := ps.UnmarshalCaddyfile(d)
 			assert.NoError(t, err)
 
-			r := httptest.NewRequest("GET", "/?foo=bar", nil)
+			r := httptest.NewRequest("GET", "/foo?foo=bar", nil)
 			r.Header.Set("X-Api-Key", "xyz")
 			r.Header.Set("Referer", "https://example.com/page?q=123")
 			r = r.WithContext(context.WithValue(r.Context(), caddyhttp.VarsCtxKey, map[string]any{
