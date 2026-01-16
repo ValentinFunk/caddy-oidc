@@ -5,13 +5,29 @@ A Caddy plugin for OIDC authentication and authorization.
 Inspired by [oauth2-proxy](https://github.com/oauth2-proxy/oauth2-proxy) but instead of requiring each application to be
 configured individually, perform authentication and authorization at the Caddy level.
 
-# Advantages over oauth2-proxy
+## Advantages over oauth2-proxy
 
 - Avoids the need to configure each application individually, with N+1 oauth2 proxies per application
 - Centralized access logging that includes user ID
 - Easier integration with security tools like fail2ban, etc
 - Anonymous access and client ip-based authorization rules
 - Support for RFC9728 (OAuth 2.0 Protected Resource Metadata)
+
+# Installation
+
+Installation can be done either via the provided Docker image (Caddy with only caddy-oidc installed)
+
+```
+ghcr.io/relvacode/caddy-oidc:latest
+```
+
+Or by building caddy with this plugin via [xcaddy](https://github.com/caddyserver/xcaddy)
+
+```Dockerfile
+FROM caddy:builder AS builder
+RUN xcaddy build \
+    --with github.com/relvacode/caddy-oidc
+```
 
 # Configuration
 
@@ -42,31 +58,33 @@ example.com {
 }
 ```
 
-### Global Directive
+## Global Directive
 
-- `issuer` - The OIDC issuer URL
-- `client_id` - The OIDC client ID
-- `secret_key` - A secret key used to sign cookies with, must be either 32 or 64 bytes long
-- `redirect_url` - (optional) The URL to redirect to after authentication. Defaults to `/oauth2/callback`. If the URL is
-  relative, the fully qualified URL is constructed using the request host and protocol.
-- `tls_insecure_skip_verify` - (optional) Skip TLS certificate verification with the OIDC provider.
-- `scope` - (optional) The scope to request from the OIDC provider. Defaults to `openid`.
-- `username` - (optional) The claim to use as the username. Defaults to `sub`.
-- `claim` - (optional) A list of claims to include in the session. Used for request authorization. Any access policy
-  rules that use a claim must be configured here.
-- `cookie` - (optional) Configures the cookie used to store the authentication state.
-- `protected_resource_metadata` - (optional) Configure or disable RFC9728 support.
+| Option                        | Description                                                                                                                                                 | Default            |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
+| `issuer`                      | The OIDC issuer URL                                                                                                                                         |                    |
+| `client_id`                   | The OIDC client ID                                                                                                                                          |                    |
+| `secret_key`                  | A secret key used to sign cookies with, must be either 32 or 64 bytes long                                                                                  |                    |
+| `redirect_url`                | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. | `/oauth2/callback` |
+| `tls_insecure_skip_verify`    | (optional) Skip TLS certificate verification with the OIDC provider.                                                                                        |                    |
+| `scope`                       | (optional) The scope to request from the OIDC provider.                                                                                                     | `openid`           |
+| `username`                    | (optional) The claim to use as the username.                                                                                                                | `sub`              |
+| `claim`                       | (optional) A list of claims to include in the session. Used for request authorization. Any access policy rules that use a claim must be configured here.    |                    |
+| `cookie`                      | (optional) Configures the cookie used to store the authentication state.                                                                                    |                    |
+| `protected_resource_metadata` | (optional) Configure or disable RFC9728 support.                                                                                                            |                    |
 
 ### Cookie
 
 Cookie configuration is used to control how the authentication session cookie is set.
 The session cookie is a signed cookie containing minimal state about the user's authentication.
 
-- `name` - The name of the cookie.
-- `domain` - (optional) The domain of the cookie.
-- `path` - (optional) The path of the cookie.
-- `insecure` - (optional) Disable secure cookies.
-- `same_site` - (optional) The samesite mode of the cookie.
+| Option      | Description                                 |
+|-------------|---------------------------------------------|
+| `name`      | The name of the cookie.                     |
+| `domain`    | (optional) The domain of the cookie.        |
+| `path`      | (optional) The path of the cookie.          |
+| `insecure`  | (optional) Disable secure cookies.          |
+| `same_site` | (optional) The samesite mode of the cookie. |
 
 The default configuration is shown below.
 
@@ -247,10 +265,12 @@ allow {
 #### claim
 
 Match requests based on the value of a claim in the ID token or session cookie.
-The oidc provider global directive must be configured to copy claims from the ID token.
+
+> [!IMPORTANT]
+> The oidc provider global directive must be configured to copy claims from the ID token with the `claim` option
 
 If the ID token claims are an array, the rule matches if any of the array values match. Each claim value must be a
-string.
+string. A policy can never match a claim containing a non-string value or arrays of non-string values.
 
 Standard claims (i.e. `exp`, `aud`, `iat`) are always validated.
 
