@@ -2,6 +2,7 @@ package caddy_oidc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -117,6 +118,13 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 		repl.Set("http.auth.user.anonymous", s.Anonymous)
 		if !s.Anonymous {
 			repl.Set("http.auth.user.id", s.Uid)
+		}
+
+		claimKeyValues := make(map[string]any)
+		_ = json.Unmarshal(s.Claims, &claimKeyValues)
+
+		for k, v := range claimKeyValues {
+			repl.Set(fmt.Sprintf("http.auth.user.claim.%s", k), v)
 		}
 	}
 

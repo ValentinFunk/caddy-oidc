@@ -91,85 +91,6 @@ func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_NoPolicy(t *testing.T
 	assert.ErrorIs(t, err, ErrAccessDenied)
 }
 
-//
-//func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_AllowUser(t *testing.T) {
-//	auth := &OIDCMiddleware{
-//		Policies: PolicySet{
-//			&Policy{
-//				Action: Allow,
-//				RequestMatcher: RequestMatcher{
-//					User: []Wildcard{"test"},
-//				},
-//			},
-//		},
-//		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
-//	}
-//
-//	w := httptest.NewRecorder()
-//	r := httptest.NewRequest("GET", "/", nil)
-//	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
-//	h := new(TestHandler)
-//
-//	err := auth.ServeHTTP(w, r, h)
-//	assert.NoError(t, err)
-//	assert.Equal(t, 1, h.calls)
-//}
-//
-//func TestOIDCMiddleware_ServeHTTP_SetsReplacerUserID(t *testing.T) {
-//	auth := &OIDCMiddleware{
-//		Policies: PolicySet{
-//			&Policy{
-//				Action: Allow,
-//				RequestMatcher: RequestMatcher{
-//					User: []Wildcard{"test"},
-//				},
-//			},
-//		},
-//		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
-//	}
-//
-//	var repl = caddy.NewEmptyReplacer()
-//
-//	w := httptest.NewRecorder()
-//	r := httptest.NewRequest("GET", "/", nil)
-//	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
-//	r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
-//	h := new(TestHandler)
-//
-//	err := auth.ServeHTTP(w, r, h)
-//	assert.NoError(t, err)
-//
-//	assert.Equal(t, repl.ReplaceAll("{http.auth.user.id}", ""), "test")
-//}
-//
-//func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_AllowUser_WithDeny(t *testing.T) {
-//	auth := &OIDCMiddleware{
-//		Policies: PolicySet{
-//			&Policy{
-//				Action: Allow,
-//				RequestMatcher: RequestMatcher{
-//					User: []Wildcard{"test"},
-//				},
-//			},
-//			&Policy{
-//				Action: Deny,
-//				RequestMatcher: RequestMatcher{
-//					User: []Wildcard{"test"},
-//				},
-//			},
-//		},
-//		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
-//	}
-//
-//	w := httptest.NewRecorder()
-//	r := httptest.NewRequest("GET", "/", nil)
-//	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
-//	h := new(TestHandler)
-//
-//	err := auth.ServeHTTP(w, r, h)
-//	assert.ErrorIs(t, err, ErrAccessDenied)
-//}
-
 func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) {
 	auth := &OIDCMiddleware{
 		au: Defer(func() (*Authenticator, error) {
@@ -227,4 +148,38 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *te
 	if assert.ErrorAs(t, err, &ce) {
 		assert.Equal(t, http.StatusNotFound, ce.StatusCode)
 	}
+}
+
+func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
+	auth := &OIDCMiddleware{
+		Policies: PolicySet{
+			{
+				Action: Allow,
+				Matchers: caddyhttp.MatcherSet{
+					&MatchUser{Usernames: []string{"*"}},
+				},
+			},
+		},
+		au: Defer(func() (*Authenticator, error) {
+			pr := GenerateTestAuthenticator()
+			pr.claims = append(pr.claims, "aud")
+			return pr, nil
+		}),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
+
+	repl := caddyhttp.NewTestReplacer(r)
+
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, h.calls)
+
+	assert.Equal(t, "false", repl.ReplaceAll("{http.auth.user.anonymous}", ""))
+	assert.Equal(t, "test", repl.ReplaceAll("{http.auth.user.id}", ""))
+	assert.Equal(t, "xyz", repl.ReplaceAll("{http.auth.user.claim.aud}", ""))
 }

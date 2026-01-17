@@ -10,7 +10,7 @@ import (
 	"github.com/gorilla/securecookie"
 )
 
-var AnonymousSession = &Session{Anonymous: true}
+var AnonymousSession = &Session{Anonymous: true, Claims: json.RawMessage(`{}`)}
 
 var SessionCtxKey caddy.CtxKey = "oidc_session"
 

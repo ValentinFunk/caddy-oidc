@@ -245,7 +245,7 @@ Different claim names are evaluated as a logical AND.
 Multiple values for the same claim name are evaluated as a logical OR.
 
 > [!NOTE]
-> Claims must be copied into the session cookie using the `claim` option of the global `oidc` directive.
+> Any claims must be configured in the `oidc` directive `claim` option.
 
 ```caddyfile
 # Allow requests containing role = write
