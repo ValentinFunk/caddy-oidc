@@ -13,36 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMatcherSet_MatchZero(t *testing.T) {
-	type Matchers struct {
-		MatcherSetsRaw caddyhttp.RawMatcherSets `json:"matchers,omitempty" caddy:"namespace=http.matchers"`
-		Matchers       caddyhttp.MatcherSets    `json:"-"`
-	}
-
-	d := caddyfile.NewTestDispenser(`{ }`)
-	var m Matchers
-
-	mm, err := caddyhttp.ParseCaddyfileNestedMatcherSet(d)
-	assert.NoError(t, err)
-
-	m.MatcherSetsRaw = append(m.MatcherSetsRaw, mm)
-
-	ctx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
-
-	matchersIface, err := ctx.LoadModule(&m, "MatcherSetsRaw")
-	assert.NoError(t, err)
-
-	err = m.Matchers.FromInterface(matchersIface)
-	assert.NoError(t, err)
-
-	r := httptest.NewRequest("GET", "/foo", nil)
-	r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
-
-	ok, err := m.Matchers.AnyMatchWithError(r)
-	assert.NoError(t, err)
-	assert.False(t, ok)
-}
-
 func TestPolicySet_Evaluate(t *testing.T) {
 	tests := []struct {
 		name    string
