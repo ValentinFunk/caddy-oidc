@@ -233,3 +233,64 @@ allow {
     path /healthcheck
 }
 ```
+
+### Claim
+
+Matches claims in the request session.
+
+If the session claim is an array, then the request must match at least one value in the array.
+Any non-string claim values are ignored and will not match.
+
+Different claim names are evaluated as a logical AND.
+Multiple values for the same claim name are evaluated as a logical OR.
+
+> [!NOTE]
+> Claims must be copied into the session cookie using the `claim` option of the global `oidc` directive.
+
+```caddyfile
+# Allow requests containing role = write
+
+allow {
+    claim role write
+}
+```
+
+```caddyfile
+# Allow requests containing role = read OR role = write
+
+allow {
+    claim role read
+    claim role write
+}
+```
+
+```caddyfile
+# Allow requests containing sub = steve@example.com AND role = read
+
+allow {
+    claim sub steve@example.com
+    claim role read
+}
+```
+
+Replacer variables are supported in both claim name and claim value.
+
+```caddyfile
+# Allow requests containing host = {http.host}
+
+allow {
+    claim host {http.host}
+}
+```
+
+Wildcard matching is also supported in claim values.
+
+```caddyfile
+# Allow requests where the role claim starts with "read:"
+
+allow {
+    claim role read:*
+}
+```
+
+

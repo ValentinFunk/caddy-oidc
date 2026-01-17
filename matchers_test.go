@@ -2,6 +2,7 @@ package caddy_oidc
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -180,6 +181,93 @@ func TestMatchAnonymous_MatchWithError(t *testing.T) {
 
 			matcher := MatchAnonymous{}
 			ok, err := matcher.MatchWithError(r)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.match, ok)
+		})
+	}
+}
+
+func TestMatchClaim_MatchWithError(t *testing.T) {
+	tests := []struct {
+		name    string
+		claims  string
+		matcher MatchClaim
+		match   bool
+	}{
+		{
+			name:    "match no claim",
+			claims:  `{}`,
+			matcher: MatchClaim{},
+			match:   true,
+		},
+		{
+			name:    "match claim not exist",
+			claims:  `{}`,
+			matcher: MatchClaim{Claims: map[string][]string{"sub": {"steve@example.com"}}},
+			match:   false,
+		},
+		{
+			name:    "match claim exist incorrect type",
+			claims:  `{"sub": 1234}`,
+			matcher: MatchClaim{Claims: map[string][]string{"sub": {"steve@example.com"}}},
+			match:   false,
+		},
+		{
+			name:    "match claim string",
+			claims:  `{"sub": "steve@example.com"}`,
+			matcher: MatchClaim{Claims: map[string][]string{"sub": {"steve@example.com"}}},
+			match:   true,
+		},
+		{
+			name:    "match claim string any",
+			claims:  `{"sub": "steve@example.com"}`,
+			matcher: MatchClaim{Claims: map[string][]string{"sub": {"bob@example.com", "steve@example.com"}}},
+			match:   true,
+		},
+		{
+			name:    "match claim string wildcard",
+			claims:  `{"sub": "steve@example.com"}`,
+			matcher: MatchClaim{Claims: map[string][]string{"sub": {"*@example.com"}}},
+			match:   true,
+		},
+		{
+			name:    "match claim array any",
+			claims:  `{"role": ["write", "read"]}`,
+			matcher: MatchClaim{Claims: map[string][]string{"role": {"read"}}},
+			match:   true,
+		},
+		{
+			name:    "match claim array any in any",
+			claims:  `{"role": ["write", "read"]}`,
+			matcher: MatchClaim{Claims: map[string][]string{"role": {"delete", "write"}}},
+			match:   true,
+		},
+		{
+			name:    "match claim array any wildcard",
+			claims:  `{"role": ["read:users", "read:settings", "write:settings"]}`,
+			matcher: MatchClaim{Claims: map[string][]string{"role": {"delete", "write:*"}}},
+			match:   true,
+		},
+		{
+			name:    "match claim string with replacer variable",
+			claims:  `{"host": "example.com"}`,
+			matcher: MatchClaim{Claims: map[string][]string{"host": {"{http.host}"}}},
+			match:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, &Session{
+				Claims: json.RawMessage(tt.claims),
+			}))
+
+			repl := caddy.NewReplacer()
+			repl.Set("http.host", "example.com")
+			r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
+
+			ok, err := tt.matcher.MatchWithError(r)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.match, ok)
 		})
