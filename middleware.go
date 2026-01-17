@@ -2,15 +2,16 @@ package caddy_oidc
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/tidwall/gjson"
 )
 
 func init() {
@@ -120,12 +121,24 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 			repl.Set("http.auth.user.id", s.Uid)
 		}
 
-		claimKeyValues := make(map[string]any)
-		_ = json.Unmarshal(s.Claims, &claimKeyValues)
+		claimValues := gjson.ParseBytes(s.Claims)
+		claimValues.ForEach(func(key, value gjson.Result) bool {
+			var valueStringBuilder strings.Builder
+			switch {
+			case value.IsArray():
+				for i, v := range value.Array() {
+					if i > 0 {
+						valueStringBuilder.WriteByte(',')
+					}
+					valueStringBuilder.WriteString(v.String())
+				}
+			default:
+				valueStringBuilder.WriteString(value.String())
+			}
 
-		for k, v := range claimKeyValues {
-			repl.Set(fmt.Sprintf("http.auth.user.claim.%s", k), v)
-		}
+			repl.Set(fmt.Sprintf("http.auth.user.claim.%s", key.String()), valueStringBuilder.String())
+			return true
+		})
 	}
 
 	// Inject session into request context

@@ -9,6 +9,7 @@
         client_id xyz
         secret_key {env.OIDC_SECRET_KEY}
         scope openid email
+        claim email
         username email
         cookie {
             insecure
@@ -25,5 +26,8 @@ http:// {
         }
     }
 
+    header X-User-Claim-Email "{http.auth.user.claim.email}" {
+        defer
+    }
     respond "{http.auth.user.id}"
 }

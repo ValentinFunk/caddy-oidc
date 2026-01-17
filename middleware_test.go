@@ -162,7 +162,7 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 		},
 		au: Defer(func() (*Authenticator, error) {
 			pr := GenerateTestAuthenticator()
-			pr.claims = append(pr.claims, "aud")
+			pr.claims = append(pr.claims, "aud", "roles")
 			return pr, nil
 		}),
 	}
@@ -182,4 +182,5 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 	assert.Equal(t, "false", repl.ReplaceAll("{http.auth.user.anonymous}", ""))
 	assert.Equal(t, "test", repl.ReplaceAll("{http.auth.user.id}", ""))
 	assert.Equal(t, "xyz", repl.ReplaceAll("{http.auth.user.claim.aud}", ""))
+	assert.Equal(t, "read,write", repl.ReplaceAll("{http.auth.user.claim.roles}", ""))
 }
