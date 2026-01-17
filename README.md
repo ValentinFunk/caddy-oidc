@@ -154,6 +154,10 @@ example.com {
 }
 ```
 
+If the request is unauthenticated, and there is not an explicit `allow` or `deny` rule that matches the request,
+and the request is made by a browser, then the browser will be automatically redirected to the OIDC provider for
+authentication.
+
 ### Access Rules
 
 Each access rule can be either `allow` or `deny`. Inspired by AWS IAM policies, each request must match at least one
@@ -183,7 +187,8 @@ oidc example {
 
 ## HTTP Matchers
 
-In addition to the standard Caddy request matchers, the following matchers are provided
+In addition to the standard Caddy request matchers, the following matchers are provided.
+These matchers are only compatible with HTTP requests handled by the handler directive.
 
 ### User
 
@@ -212,5 +217,19 @@ allow {
     user steve
     user bob
     user john
+}
+```
+
+### Anonymous
+
+Matches request sessions that are anonymous.
+Anonymous sessions are sessions that have not been authenticated by the OIDC provider.
+
+```caddyfile
+# Allow anonymous requests to /healthcheck
+
+allow {
+    anonymous
+    path /healthcheck
 }
 ```

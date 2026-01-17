@@ -84,6 +84,32 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			},
 			expect: RejectExplicit,
 		},
+		{
+			name: "deny anonymous at path",
+			input: `{
+				deny {
+					anonymous
+					path /foo
+				}
+			}`,
+			session: &Session{
+				Anonymous: true,
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "deny anonymous at another path",
+			input: `{
+				deny {
+					anonymous
+					path /bar
+				}
+			}`,
+			session: &Session{
+				Anonymous: true,
+			},
+			expect: RejectImplicit,
+		},
 	}
 
 	for _, tt := range tests {

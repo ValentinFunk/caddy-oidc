@@ -146,3 +146,42 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchAnonymous_MatchWithError(t *testing.T) {
+	tests := []struct {
+		name    string
+		session *Session
+		match   bool
+	}{
+		{
+			name:    "match no session",
+			session: nil,
+			match:   true,
+		},
+		{
+			name:    "match anonymous session",
+			session: &Session{Anonymous: true},
+			match:   true,
+		},
+		{
+			name:    "no match authenticated session",
+			session: &Session{Uid: "steve@example.com"},
+			match:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+			if tt.session != nil {
+				r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, tt.session))
+			}
+
+			matcher := MatchAnonymous{}
+			ok, err := matcher.MatchWithError(r)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.match, ok)
+		})
+	}
+}

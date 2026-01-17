@@ -11,6 +11,7 @@ import (
 
 func init() {
 	caddy.RegisterModule(new(MatchUser))
+	caddy.RegisterModule(new(MatchAnonymous))
 }
 
 // MatchWildcard matches a possible wildcard pattern against a value.
@@ -95,7 +96,45 @@ func (m *MatchUser) Match(r *http.Request) bool {
 	return ok
 }
 
-//func f() {
-//	caddy.ReplacerCtxKey
-//	caddyhttp.MatchHeader{}.Match()
-//}
+var (
+	_ caddy.Module                      = (*MatchAnonymous)(nil)
+	_ caddyfile.Unmarshaler             = (*MatchAnonymous)(nil)
+	_ caddyhttp.RequestMatcherWithError = (*MatchAnonymous)(nil)
+	_ caddyhttp.RequestMatcher          = (*MatchAnonymous)(nil)
+)
+
+// MatchAnonymous matches requests that are anonymous or do not have a valid session in the request context.
+type MatchAnonymous struct{}
+
+func (*MatchAnonymous) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.matchers.anonymous",
+		New: func() caddy.Module { return new(MatchAnonymous) },
+	}
+}
+
+func (*MatchAnonymous) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		if d.NextArg() {
+			return d.ArgErr()
+		}
+		if d.NextBlock(0) {
+			return d.Err("unexpected block")
+		}
+	}
+	return nil
+}
+
+func (*MatchAnonymous) MatchWithError(r *http.Request) (bool, error) {
+	s, ok := r.Context().Value(SessionCtxKey).(*Session)
+	if !ok || s.Anonymous {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (m *MatchAnonymous) Match(r *http.Request) bool {
+	ok, _ := m.MatchWithError(r)
+	return ok
+}
