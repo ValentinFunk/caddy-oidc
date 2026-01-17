@@ -1,6 +1,8 @@
 package caddy_oidc
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -78,19 +80,16 @@ func (mw *OIDCMiddleware) Provision(ctx caddy.Context) error {
 
 	mw.au = au
 
+	err = mw.Policies.Provision(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (mw *OIDCMiddleware) Validate() error {
-	if len(mw.Policies) == 0 {
-		return errors.New("at least one policy must be specified")
-	}
-
-	if !mw.Policies.ContainsAllow() {
-		return errors.New("no authorization policy is configured to allow access, all requests will be denied without at least one allow policy")
-	}
-
-	return nil
+	return mw.Policies.Validate()
 }
 
 func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -114,13 +113,25 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 		return err
 	}
 
-	if !s.Anonymous {
-		if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
+	// Set replacer vars
+	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
+		repl.Set("http.auth.user.anonymous", s.Anonymous)
+		if !s.Anonymous {
 			repl.Set("http.auth.user.id", s.Uid)
+		}
+
+		claimKeyValues := make(map[string]any)
+		_ = json.Unmarshal(s.Claims, &claimKeyValues)
+
+		for k, v := range claimKeyValues {
+			repl.Set(fmt.Sprintf("http.auth.user.claim.%s", k), v)
 		}
 	}
 
-	e, err := mw.Policies.Evaluate(r, s)
+	// Inject session into request context
+	r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, s))
+
+	e, err := mw.Policies.Evaluate(r)
 	if err != nil {
 		return err
 	}
