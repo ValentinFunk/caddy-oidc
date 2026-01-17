@@ -1,6 +1,7 @@
 package caddy_oidc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -111,13 +112,16 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 		return err
 	}
 
-	if !s.Anonymous {
-		if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
+	// Set replacer vars
+	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
+		repl.Set("http.auth.user.anonymous", s.Anonymous)
+		if !s.Anonymous {
 			repl.Set("http.auth.user.id", s.Uid)
 		}
 	}
 
-	// TODO Set session context
+	// Inject session into request context
+	r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, s))
 
 	e, err := mw.Policies.Evaluate(r)
 	if err != nil {

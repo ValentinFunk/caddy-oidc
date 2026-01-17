@@ -5,11 +5,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/securecookie"
 )
 
 var AnonymousSession = &Session{Anonymous: true}
+
+var SessionCtxKey caddy.CtxKey = "oidc_session"
 
 type Session struct {
 	Uid       string          `json:"u"`

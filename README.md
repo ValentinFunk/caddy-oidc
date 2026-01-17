@@ -157,9 +157,16 @@ example.com {
 ### Access Rules
 
 Each access rule can be either `allow` or `deny`. Inspired by AWS IAM policies, each request must match at least one
-`allow` rule to be authorized. If a request matches any `deny` rule then the request is denied.
+`allow` rule to be authorized.
 
 Access rules match using Caddy's regular [request matchers](https://caddyserver.com/docs/caddyfile/matchers).
+Additional [HTTP matchers](#http-matchers) are provided for authentication-specific request matching.
+
+> [!CAUTION]
+> Without an explicit [user](#user) match in an `allow` policy rule, all requests will be allowed, even anonymous
+> requests.
+
+If a request matches any `deny` rule then the request is denied, even if another `allow` rule matches.
 
 ```caddyfile
 # Allow any authenticated user from example.com except from steve
@@ -174,15 +181,36 @@ oidc example {
 }
 ```
 
-Multiple conditions for a single rule are a logical AND.
+## HTTP Matchers
+
+In addition to the standard Caddy request matchers, the following matchers are provided
+
+### User
+
+Matches the username of the authenticated user. A user match will never match an anonymous user.
 
 ```caddyfile
-# Allow unauthenticated access from the local network
+# Allow any authenticated user
 
-oidc example {
-    allow {
-        anonymous
-        client 192.168.0.0/24
-    }
+allow {
+    user *
+}
+```
+
+```caddyfile
+# Allow any authenticated user from example.com
+
+allow {
+    user *@example.com
+}
+```
+
+```caddyfile
+# Allow multiple users
+
+allow {
+    user steve
+    user bob
+    user john
 }
 ```

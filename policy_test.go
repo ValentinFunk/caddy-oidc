@@ -8,6 +8,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -70,6 +71,19 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			},
 			expect: RejectExplicit,
 		},
+		{
+			name: "deny explicit user",
+			input: `{
+				deny {
+					user bob@example.com
+					user steve@example.com
+				}
+			}`,
+			session: &Session{
+				Uid: "steve@example.com",
+			},
+			expect: RejectExplicit,
+		},
 	}
 
 	for _, tt := range tests {
@@ -86,6 +100,8 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			err = ps.Provision(pCtx)
 			assert.NoError(t, err)
 
+			t.Log("policy set:", spew.Sdump(ps))
+
 			r := httptest.NewRequest("GET", "/foo?foo=bar", nil)
 			r.Header.Set("X-Api-Key", "xyz")
 			r.Header.Set("Referer", "https://example.com/page?q=123")
@@ -93,6 +109,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 				caddyhttp.ClientIPVarKey: "127.0.0.1",
 			}))
 			r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, tt.session))
 
 			e, err := ps.Evaluate(r)
 			assert.NoError(t, err)
