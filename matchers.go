@@ -145,12 +145,15 @@ var (
 	_ caddyhttp.RequestMatcherWithError = (*MatchClaim)(nil)
 )
 
+type ClaimMatch struct {
+	Name   string   `json:"name"`
+	Values []string `json:"values"`
+}
+
 // MatchClaim matches claims in a request session.
 // The claim value in the session must be a string or an array of strings.
 // If the claim value is an array, the match succeeds if any of the values match.
-type MatchClaim struct {
-	Claims map[string][]string `json:"claims,omitempty"`
-}
+type MatchClaim []ClaimMatch
 
 func (*MatchClaim) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
@@ -160,17 +163,21 @@ func (*MatchClaim) CaddyModule() caddy.ModuleInfo {
 }
 
 func (m *MatchClaim) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	if m.Claims == nil {
-		m.Claims = make(map[string][]string)
-	}
-
 	for d.Next() {
-		var name, value string
-		if !d.Args(&name, &value) {
+		if !d.NextArg() {
 			return d.ArgErr()
 		}
 
-		m.Claims[name] = append(m.Claims[name], value)
+		var claim = ClaimMatch{
+			Name:   d.Val(),
+			Values: d.RemainingArgs(),
+		}
+
+		if len(claim.Values) == 0 {
+			return d.Err("claim must have at least one value")
+		}
+
+		*m = append(*m, claim)
 	}
 
 	return nil
@@ -185,8 +192,8 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
 
-	for claimName, claimValues := range m.Claims {
-		claimNameVal := repl.ReplaceAll(claimName, "")
+	for _, claimMatch := range *m {
+		claimNameVal := repl.ReplaceAll(claimMatch.Name, "")
 
 		claimsValueMatch := gjson.GetBytes(session.Claims, claimNameVal)
 		if !claimsValueMatch.Exists() {
@@ -195,7 +202,7 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 
 		var foundMatch bool
 	findMatch:
-		for _, claimValue := range claimValues {
+		for _, claimValue := range claimMatch.Values {
 			claimValueVal := repl.ReplaceAll(claimValue, "")
 
 			switch {

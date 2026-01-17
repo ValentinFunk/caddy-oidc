@@ -241,8 +241,7 @@ Matches claims in the request session.
 If the session claim is an array, then the request must match at least one value in the array.
 Any non-string claim values are ignored and will not match.
 
-Different claim names are evaluated as a logical AND.
-Multiple values for the same claim name are evaluated as a logical OR.
+Multiple values for a single claim directive are treated as a logical OR.
 
 > [!NOTE]
 > Any claims must be configured in the `oidc` directive `claim` option.
@@ -257,6 +256,14 @@ allow {
 
 ```caddyfile
 # Allow requests containing role = read OR role = write
+
+allow {
+    claim role read write
+}
+```
+
+```caddyfile
+# Allow requests containing role = read AND role = write
 
 allow {
     claim role read
