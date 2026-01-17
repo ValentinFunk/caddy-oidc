@@ -157,8 +157,9 @@ example.com {
 ### Access Rules
 
 Each access rule can be either `allow` or `deny`. Inspired by AWS IAM policies, each request must match at least one
-`allow` rule to be authorized.
-If a request matches any `deny` rule then the request is denied.
+`allow` rule to be authorized. If a request matches any `deny` rule then the request is denied.
+
+Access rules match using Caddy's regular [request matchers](https://caddyserver.com/docs/caddyfile/matchers).
 
 ```caddyfile
 # Allow any authenticated user from example.com except from steve
@@ -183,121 +184,5 @@ oidc example {
         anonymous
         client 192.168.0.0/24
     }
-}
-```
-
-#### user
-
-The `user` rule can be used to match authenticated users by their username. The username is extracted from the OIDC
-claims according to the provider configuration.
-One or more usernames can be specified in a space separated list and supports wildcard `*` matching.
-
-#### anonymous
-
-An anonymous request is one that does not contain an authentication cookie or bearer token.
-This allows clients to make anonymous requests to the server where desired.
-
-#### client
-
-The `client` rule can be used to match requests from a specific IP address or subnet.
-Supplied as a space-separated list of CIDR notation subnets or IP addresses.
-
-#### method
-
-Match the HTTP method of the request (case-insensitive)
-
-```caddyfile
-# Allow any authenticated user to make GET requests to the API
-
-allow {
-    method get
-}
-```
-
-#### path
-
-Wildcard-match the case-sensitive path component of the request URL. Slashes do **not** delimit wildcard matching.
-
-```caddyfile
-# Allow any authenticated user to make requests to /api/*
-
-allow {
-    path /api/*
-}
-```
-
-#### query
-
-The `query` rule can be used to match requests based on query parameters, either by existence or wildcard matched value.
-
-```caddyfile
-# Allow requests having api-key=xyz and/or public
-
-allow {
-    query api-key=xyz public
-}
-```
-
-#### header
-
-The `header` rule can be used to match requests based on HTTP header values, either by existence or wildcard matched
-value.
-The header name is case-insensitive and normalized to the canonical form specified in RFC 7230.
-
-> [!CAUTION]
-> Headers are controlled by the client and can be easily spoofed.
-
-```caddyfile
-# Allow requests having X-Api-Key=xyz
-
-allow {
-    header X-Api-Key=xyz
-}
-```
-
-```caddyfile
-# Allow requests having any Referer like https://example.com/*
-allow {
-    header Referer=https://example.com/*
-}
-```
-
-#### claim
-
-Match requests based on the value of a claim in the ID token or session cookie.
-
-> [!IMPORTANT]
-> The oidc provider global directive must be configured to copy claims from the ID token with the `claim` option
-
-If the ID token claims are an array, the rule matches if any of the array values match. Each claim value must be a
-string. A policy can never match a claim containing a non-string value or arrays of non-string values.
-
-Standard claims (i.e. `exp`, `aud`, `iat`) are always validated.
-
-```caddyfile
-# Allow requests having the claim role=read
-
-allow {
-    claim role=read
-}
-```
-
-Multiple values for a single claim directive are a logical AND
-
-```caddyfile
-# Allow requests having the claim role=read AND role=admin
-
-allow {
-    claim role=read role=admin
-}
-```
-
-Claim restrictions are wildcard matched against the claim value.
-
-```caddyfile
-# Allow requests having the claim where any role value starts with read:
-
-allow {
-    claim role=read:*
 }
 ```

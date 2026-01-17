@@ -78,19 +78,16 @@ func (mw *OIDCMiddleware) Provision(ctx caddy.Context) error {
 
 	mw.au = au
 
+	err = mw.Policies.Provision(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (mw *OIDCMiddleware) Validate() error {
-	if len(mw.Policies) == 0 {
-		return errors.New("at least one policy must be specified")
-	}
-
-	if !mw.Policies.ContainsAllow() {
-		return errors.New("no authorization policy is configured to allow access, all requests will be denied without at least one allow policy")
-	}
-
-	return nil
+	return mw.Policies.Validate()
 }
 
 func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
@@ -120,7 +117,9 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 		}
 	}
 
-	e, err := mw.Policies.Evaluate(r, s)
+	// TODO Set session context
+
+	e, err := mw.Policies.Evaluate(r)
 	if err != nil {
 		return err
 	}
