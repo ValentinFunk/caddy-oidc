@@ -37,7 +37,6 @@ var (
 	_ caddy.Module                      = (*MatchUser)(nil)
 	_ caddyfile.Unmarshaler             = (*MatchUser)(nil)
 	_ caddyhttp.RequestMatcherWithError = (*MatchUser)(nil)
-	_ caddyhttp.RequestMatcher          = (*MatchUser)(nil)
 )
 
 // MatchUser matches the request against a list of wildcard-matched usernames present
@@ -102,7 +101,6 @@ var (
 	_ caddy.Module                      = (*MatchAnonymous)(nil)
 	_ caddyfile.Unmarshaler             = (*MatchAnonymous)(nil)
 	_ caddyhttp.RequestMatcherWithError = (*MatchAnonymous)(nil)
-	_ caddyhttp.RequestMatcher          = (*MatchAnonymous)(nil)
 )
 
 // MatchAnonymous matches requests that are anonymous or do not have a valid session in the request context.
@@ -145,7 +143,6 @@ var (
 	_ caddy.Module                      = (*MatchClaim)(nil)
 	_ caddyfile.Unmarshaler             = (*MatchClaim)(nil)
 	_ caddyhttp.RequestMatcherWithError = (*MatchClaim)(nil)
-	_ caddyhttp.RequestMatcher          = (*MatchClaim)(nil)
 )
 
 // MatchClaim matches claims in a request session.

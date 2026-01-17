@@ -85,7 +85,7 @@ func (p *Policy) Provision(ctx caddy.Context) error {
 		switch matcher.(type) {
 		case caddyhttp.RequestMatcherWithError:
 			p.Matchers = append(p.Matchers, matcher)
-		case caddyhttp.RequestMatcher:
+		case caddyhttp.RequestMatcher: //nolint:SA1019 // RequestMatcher deprecated for implementation but kept here for backwards compatibility for parsing
 			p.Matchers = append(p.Matchers, matcher)
 		default:
 			return fmt.Errorf("decoded module is not a RequestMatcher or RequestMatcherWithError: %#v", matcher)
