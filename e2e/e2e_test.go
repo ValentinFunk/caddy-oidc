@@ -98,4 +98,6 @@ func TestIntegrationOAuthLoginFlow(t *testing.T) {
 	data, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), "admin@example.com")
+
+	assert.Equal(t, "admin@example.com", resp.Header.Get("X-User-Claim-Email"))
 }

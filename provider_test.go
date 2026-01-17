@@ -26,7 +26,8 @@ func (TestKeySet) VerifySignature(ctx context.Context, token string) (payload []
 
 type ExtendedClaims struct {
 	jwt.Claims
-	Email string `json:"email"`
+	Email string   `json:"email"`
+	Roles []string `json:"roles,omitempty"`
 }
 
 func GenerateTestJWT() string {
@@ -42,6 +43,7 @@ func GenerateTestJWT() string {
 			Audience: jwt.Audience{"xyz"},
 		},
 		Email: "x@example.org",
+		Roles: []string{"read", "write"},
 	}
 
 	raw, err := jwt.Signed(sig).Claims(cl).Serialize()

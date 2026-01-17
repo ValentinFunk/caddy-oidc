@@ -67,7 +67,7 @@ example.com {
 | `secret_key`                  | A secret key used to sign cookies with, must be either 32 or 64 bytes long                                                                                  |                    |
 | `redirect_url`                | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. | `/oauth2/callback` |
 | `tls_insecure_skip_verify`    | (optional) Skip TLS certificate verification with the OIDC provider.                                                                                        |                    |
-| `scope`                       | (optional) The scope to request from the OIDC provider.                                                                                                     | `openid`           |
+| `scope`                       | (optional) The scope to request from the OIDC provider. The `openid` scope is required for browser-based login to work.                                     | `openid`           |
 | `username`                    | (optional) The claim to use as the username.                                                                                                                | `sub`              |
 | `claim`                       | (optional) A list of claims to include in the session. Used for request authorization. Any access policy rules that use a claim must be configured here.    |                    |
 | `cookie`                      | (optional) Configures the cookie used to store the authentication state.                                                                                    |                    |
@@ -300,4 +300,28 @@ allow {
 }
 ```
 
+# Placeholder Variables
+
+When a request passes through the `oidc` handler, the following [placeholder](https://caddyserver.com/docs/conventions#placeholders) variables are available:
+
+| Placeholder                | Description                                                                  |
+|----------------------------|------------------------------------------------------------------------------|
+| `http.auth.user.id`        | The username extracted from the `username` option of the global directive    |
+| `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                 |
+| `http.auth.user.claim.*`   | Set for each extracted claim from the `claim` option of the global directive |
+
+Because the `oidc` handler is ordered after the `header` handler, to set these variables in response headers, you must use the `defer` option
+
+```caddyfile
+header X-User-Claim-Email {http.auth.user.claim.email} {
+    defer
+}
+```
+
+## Claim Value Formatting
+
+  - Simple values like strings, booleans, and numbers are formatted as plain values
+  - Null values are empty
+  - Objects are formatted as JSON
+  - Arrays are formatted using the above rules for each element, joined by commas. Nested arrays are formatted as JSON
 
