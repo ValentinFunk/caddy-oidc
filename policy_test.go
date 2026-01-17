@@ -94,15 +94,27 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			expect: RejectExplicit,
 		},
 		{
-			name: "deny matching claim multiple",
+			name: "deny matching claim multiple OR",
 			input: `{
 				deny {
-					claim sub bob@example.com
-					claim sub steve@example.com
+					claim sub bob@example.com steve@example.com
 				}
 			}`,
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
+			},
+			expect: RejectExplicit,
+		},
+		{
+			name: "deny matching claim multiple AND",
+			input: `{
+				deny {
+					claim role read
+					claim role write
+				}
+			}`,
+			session: &Session{
+				Claims: json.RawMessage(`{"role": ["read": "write"]}`),
 			},
 			expect: RejectExplicit,
 		},
