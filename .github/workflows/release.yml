@@ -53,15 +53,12 @@ jobs:
             ghcr.io/${{ github.repository }}
           # Add the Caddy version as a suffix to all generated tags
           flavor: |
+            latest=false
             suffix=-${{ steps.caddy.outputs.version }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=ref,event=branch
-            type=ref,event=pr
-            # latest with Caddy suffix (e.g., latest-2.10.2)
-            type=raw,value=latest
 
       - name: Extract Docker metadata (plain latest tag)
         id: meta_plain
@@ -70,7 +67,9 @@ jobs:
           images: |
             ghcr.io/${{ github.repository }}
           tags: |
-            # Also publish an unsuffixed 'latest' tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
             type=raw,value=latest
 
       - name: Build and push Docker image
