@@ -29,8 +29,8 @@ var _ caddyfile.Unmarshaler = (*OIDCMiddleware)(nil)
 var _ caddyhttp.MiddlewareHandler = (*OIDCMiddleware)(nil)
 
 type OIDCMiddleware struct {
-	Provider string    `json:"provider"`
-	Policies PolicySet `json:"policies"`
+	Provider string  `json:"provider"`
+	Policies Ruleset `json:"policies"`
 
 	au *DeferredResult[*Authenticator]
 }
@@ -144,16 +144,21 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 	// Inject session into request context
 	r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, s))
 
-	e, err := mw.Policies.Evaluate(r)
+	result, err := mw.Policies.Evaluate(r)
 	if err != nil {
 		return err
 	}
 
-	switch e {
-	case Permit:
+	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
+		repl.Set("http.auth.rule", result.RuleID)
+		repl.Set("http.auth.result", result.Result.String())
+	}
+
+	switch result.Result {
+	case EvaluationResultAllow:
 		return next.ServeHTTP(rw, r)
-	case RejectExplicit:
-	case RejectImplicit:
+	case EvaluationResultExplicitDeny:
+	case EvaluationResultImplicitDeny:
 		// If the evaluation result is an implicit reject, then check if the session is anonymous.
 		// If anonymous:
 		//		Start the authorization flow if the request is likely coming from a browser.
@@ -169,9 +174,6 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 
 			return caddyhttp.Error(http.StatusUnauthorized, ErrAccessDenied)
 		}
-	default:
-		// impossible
-		panic("invalid policy evaluation result")
 	}
 
 	return caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
