@@ -144,16 +144,16 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 	// Inject session into request context
 	r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, s))
 
-	e, err := mw.Policies.Evaluate(r)
+	result, err := mw.Policies.Evaluate(r)
 	if err != nil {
 		return err
 	}
 
-	switch e {
-	case Permit:
+	switch result.Result {
+	case EvaluationResultAllow:
 		return next.ServeHTTP(rw, r)
-	case RejectExplicit:
-	case RejectImplicit:
+	case EvaluationResultExplicitDeny:
+	case EvaluationResultImplicitDeny:
 		// If the evaluation result is an implicit reject, then check if the session is anonymous.
 		// If anonymous:
 		//		Start the authorization flow if the request is likely coming from a browser.

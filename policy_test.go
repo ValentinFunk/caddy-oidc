@@ -13,12 +13,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestPolicySet_UnmarshalCaddyfile_WithID(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`{
+		allow s1 {
+			path /foo
+		}
+	}`)
+
+	var ps PolicySet
+	err := ps.UnmarshalCaddyfile(d)
+	assert.NoError(t, err)
+	if assert.Len(t, ps, 1) {
+		assert.Equal(t, "s1", ps[0].ID)
+	}
+}
+
 func TestPolicySet_Evaluate(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
 		session *Session
-		expect  Evaluation
+		expect  EvaluationResult
 	}{
 		{
 			name: "empty allow authenticated",
@@ -28,7 +43,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Uid: "test",
 			},
-			expect: RejectImplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny explicit path match",
@@ -40,7 +55,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Uid: "test",
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny explicit user",
@@ -53,7 +68,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Uid: "steve@example.com",
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny anonymous at path",
@@ -66,7 +81,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Anonymous: true,
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny anonymous at another path",
@@ -79,7 +94,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Anonymous: true,
 			},
-			expect: RejectImplicit,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny matching claim",
@@ -91,7 +106,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny matching claim multiple OR",
@@ -103,7 +118,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny matching claim multiple AND",
@@ -116,7 +131,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"role": ["read": "write"]}`),
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny matching claim wildcard",
@@ -128,7 +143,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny matching claim replacer var",
@@ -140,7 +155,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"host": "example.com"}`),
 			},
-			expect: RejectExplicit,
+			expect: EvaluationResultImplicitDeny,
 		},
 	}
 

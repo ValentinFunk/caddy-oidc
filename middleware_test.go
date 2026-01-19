@@ -154,7 +154,7 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 	auth := &OIDCMiddleware{
 		Policies: PolicySet{
 			{
-				Action: Allow,
+				Action: ActionAllow,
 				Matchers: caddyhttp.MatcherSet{
 					&MatchUser{Usernames: []string{"*"}},
 				},

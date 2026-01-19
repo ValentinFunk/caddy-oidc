@@ -10,66 +10,26 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+//go:generate go tool go-enum -f=$GOFILE --marshal
+
+// Action represents the possible actions for policy evaluation.
+// ENUM(allow, deny)
 type Action uint8
 
-const (
-	Allow Action = iota + 1
-	Deny
-)
+// EvaluationResult represents the possible results of policy evaluation.
+// ENUM(implicit deny, explicit deny, allow)
+type EvaluationResult uint8
 
-func (a *Action) String() string {
-	switch *a {
-	case Allow:
-		return "allow"
-	case Deny:
-		return "deny"
-	default:
-		return fmt.Sprintf("unknown action %d", *a)
-	}
-}
-
-func (a *Action) MarshalText() ([]byte, error) {
-	return []byte(a.String()), nil
-}
-
-func (a *Action) UnmarshalText(text []byte) error {
-	switch string(text) {
-	case "allow":
-		*a = Allow
-	case "deny":
-		*a = Deny
-	default:
-		return fmt.Errorf("unrecognized action '%s'", text)
-	}
-
-	return nil
-}
-
-type Evaluation uint8
-
-const (
-	Permit         Evaluation = 0b01
-	RejectExplicit Evaluation = 0b10
-	RejectImplicit Evaluation = 0b00
-)
-
-func (e Evaluation) String() string {
-	switch e {
-	case Permit:
-		return "permit"
-	case RejectExplicit:
-		return "reject explicit"
-	case RejectImplicit:
-		return "reject implicit"
-	default:
-		panic("invalid evaluation result")
-	}
+type PolicyEvaluation struct {
+	Result   EvaluationResult `json:"result"`
+	PolicyID string           `json:"policy_id"`
 }
 
 var _ caddy.Provisioner = (*Policy)(nil)
 var _ caddyhttp.RequestMatcherWithError = (*Policy)(nil)
 
 type Policy struct {
+	ID             string               `json:"id,omitempty"`
 	Action         Action               `json:"action"`
 	MatcherSetsRaw caddy.ModuleMap      `json:"match,omitempty" caddy:"namespace=http.matchers"`
 	Matchers       caddyhttp.MatcherSet `json:"-"`
@@ -118,12 +78,14 @@ func (ps *PolicySet) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		var pol Policy
 		switch d.Val() {
 		case "allow":
-			pol.Action = Allow
+			pol.Action = ActionAllow
 		case "deny":
-			pol.Action = Deny
+			pol.Action = ActionDeny
 		default:
 			return d.Errf("unrecognized action '%s'", d.Val())
 		}
+
+		_ = d.Args(&pol.ID)
 
 		var err error
 		pol.MatcherSetsRaw, err = caddyhttp.ParseCaddyfileNestedMatcherSet(d)
@@ -148,10 +110,10 @@ func (ps *PolicySet) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// ContainsAllow returns true if the set contains at least one Allow policy.
+// ContainsAllow returns true if the set contains at least one ActionAllow policy.
 func (ps *PolicySet) ContainsAllow() bool {
 	for _, p := range *ps {
-		if p.Action == Allow {
+		if p.Action == ActionAllow {
 			return true
 		}
 	}
@@ -159,7 +121,7 @@ func (ps *PolicySet) ContainsAllow() bool {
 }
 
 // Validate the policy set.
-// Returns an error if there isn't at least one Allow policy.
+// Returns an error if there isn't at least one ActionAllow policy.
 func (ps *PolicySet) Validate() error {
 	if !ps.ContainsAllow() {
 		return errors.New("no authorization policy is configured to allow access, all requests will be denied without at least one allow policy")
@@ -169,31 +131,39 @@ func (ps *PolicySet) Validate() error {
 }
 
 // Evaluate all policies in the set and return the evaluation result.
-// If any Deny policy is matched, return RejectExplicit.
-// If at least one Allow policy is matched, return Permit.
-// Otherwise, return RejectImplicit.
-func (ps *PolicySet) Evaluate(r *http.Request) (Evaluation, error) {
-	var isAllowed = false
+// If any ActionDeny policy is matched, return ResultImplicitDeny.
+// If at least one ActionAllow policy is matched, return ResultAllow.
+// Otherwise, return ResultExplicitDeny.
+func (ps *PolicySet) Evaluate(r *http.Request) (e PolicyEvaluation, err error) {
+	e.Result = EvaluationResultImplicitDeny
 
 	for _, p := range *ps {
-		match, err := p.MatchWithError(r)
+		// Skip allow policy if already accepted.
+		if p.Action == ActionAllow && e.Result == EvaluationResultAllow {
+			continue
+		}
+
+		var ok bool
+		ok, err = p.MatchWithError(r)
 		if err != nil {
-			return 0, err
+			return
 		}
 
-		if match {
-			switch p.Action {
-			case Allow:
-				isAllowed = true
-			case Deny:
-				return RejectExplicit, nil
-			}
+		if !ok {
+			continue
+		}
+
+		e.PolicyID = p.ID
+
+		switch p.Action {
+		case ActionAllow:
+			e.Result = EvaluationResultAllow
+		case ActionDeny:
+			// Return immediately if any 'deny' policy is matched.
+			e.Result = EvaluationResultExplicitDeny
+			return
 		}
 	}
 
-	if isAllowed {
-		return Permit, nil
-	}
-
-	return RejectImplicit, nil
+	return
 }
