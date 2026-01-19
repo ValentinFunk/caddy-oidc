@@ -9,18 +9,17 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPolicySet_UnmarshalCaddyfile_WithID(t *testing.T) {
+func TestRuleset_UnmarshalCaddyfile_WithID(t *testing.T) {
 	d := caddyfile.NewTestDispenser(`{
 		allow s1 {
 			path /foo
 		}
 	}`)
 
-	var ps PolicySet
+	var ps Ruleset
 	err := ps.UnmarshalCaddyfile(d)
 	assert.NoError(t, err)
 	if assert.Len(t, ps, 1) {
@@ -28,7 +27,7 @@ func TestPolicySet_UnmarshalCaddyfile_WithID(t *testing.T) {
 	}
 }
 
-func TestPolicySet_Evaluate(t *testing.T) {
+func TestRuleset_Evaluate(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
@@ -55,7 +54,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Uid: "test",
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny explicit user",
@@ -68,7 +67,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Uid: "steve@example.com",
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny anonymous at path",
@@ -81,7 +80,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Anonymous: true,
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny anonymous at another path",
@@ -94,7 +93,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Anonymous: true,
 			},
-			expect: EvaluationResultExplicitDeny,
+			expect: EvaluationResultImplicitDeny,
 		},
 		{
 			name: "deny matching claim",
@@ -106,7 +105,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny matching claim multiple OR",
@@ -118,7 +117,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny matching claim multiple AND",
@@ -131,7 +130,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"role": ["read": "write"]}`),
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny matching claim wildcard",
@@ -143,7 +142,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 		{
 			name: "deny matching claim replacer var",
@@ -155,7 +154,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 			session: &Session{
 				Claims: json.RawMessage(`{"host": "example.com"}`),
 			},
-			expect: EvaluationResultImplicitDeny,
+			expect: EvaluationResultExplicitDeny,
 		},
 	}
 
@@ -163,7 +162,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := caddyfile.NewTestDispenser(tt.input)
 
-			var ps PolicySet
+			var ps Ruleset
 
 			err := ps.UnmarshalCaddyfile(d)
 			assert.NoError(t, err)
@@ -172,8 +171,6 @@ func TestPolicySet_Evaluate(t *testing.T) {
 
 			err = ps.Provision(pCtx)
 			assert.NoError(t, err)
-
-			t.Log("policy set:", spew.Sdump(ps))
 
 			r := httptest.NewRequest("GET", "/foo?foo=bar", nil)
 			r.Header.Set("X-Api-Key", "xyz")
@@ -190,7 +187,7 @@ func TestPolicySet_Evaluate(t *testing.T) {
 
 			e, err := ps.Evaluate(r)
 			assert.NoError(t, err)
-			assert.Equalf(t, tt.expect, e, "expected: %s, got: %s", tt.expect, e)
+			assert.Equalf(t, tt.expect, e.Result, "expected: %s, got: %s", tt.expect, e.Result)
 		})
 	}
 }

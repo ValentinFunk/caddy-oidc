@@ -185,6 +185,27 @@ oidc example {
 }
 ```
 
+Access rules can be optionally named for logging, if matched then the rule ID will be available as the placeholder
+variable `{http.auth.rule}`.
+
+```caddyfile
+oidc example {
+    deny "DenyAnonymousAccess" {
+        anonymous
+    }
+    allow "AllowAnyUserReadAccess" {
+        method GET HEAD
+        user *
+        claim role read
+    }
+    allow "AllowAdminWriteAccess" {
+        method POST PUT PATCH DELETE
+        user *
+        claim role write
+    }
+}
+```
+
 ## HTTP Matchers
 
 In addition to the standard Caddy request matchers, the following matchers are provided.
@@ -302,15 +323,19 @@ allow {
 
 # Placeholder Variables
 
-When a request passes through the `oidc` handler, the following [placeholder](https://caddyserver.com/docs/conventions#placeholders) variables are available:
+When a request passes through the `oidc` handler, the
+following [placeholder](https://caddyserver.com/docs/conventions#placeholders) variables are available:
 
-| Placeholder                | Description                                                                  |
-|----------------------------|------------------------------------------------------------------------------|
-| `http.auth.user.id`        | The username extracted from the `username` option of the global directive    |
-| `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                 |
-| `http.auth.user.claim.*`   | Set for each extracted claim from the `claim` option of the global directive |
+| Placeholder                | Description                                                                            |
+|----------------------------|----------------------------------------------------------------------------------------|
+| `http.auth.user.id`        | The username extracted from the `username` option of the global directive              |
+| `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                           |
+| `http.auth.user.claim.*`   | Set for each extracted claim from the `claim` option of the global directive           |
+| `http.auth.rule`           | The named access policy rule that matched the request                                  |
+| `http.auth.result`         | The acccess rule evaluation result. One of `allow`, `implicit deny` or `explicit deny` |
 
-Because the `oidc` handler is ordered after the `header` handler, to set these variables in response headers, you must use the `defer` option
+Because the `oidc` handler is ordered after the `header` handler, to set these variables in response headers, you must
+use the `defer` option
 
 ```caddyfile
 header X-User-Claim-Email {http.auth.user.claim.email} {
@@ -320,8 +345,8 @@ header X-User-Claim-Email {http.auth.user.claim.email} {
 
 ## Claim Value Formatting
 
-  - Simple values like strings, booleans, and numbers are formatted as plain values
-  - Null values are empty
-  - Objects are formatted as JSON
-  - Arrays are formatted using the above rules for each element, joined by commas. Nested arrays are formatted as JSON
+- Simple values like strings, booleans, and numbers are formatted as plain values
+- Null values are empty
+- Objects are formatted as JSON
+- Arrays are formatted using the above rules for each element, joined by commas. Nested arrays are formatted as JSON
 

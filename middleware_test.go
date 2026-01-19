@@ -77,7 +77,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
 	assert.Equal(t, `Bearer resource_metadata="http://example.com/.well-known/oauth-protected-resource", scope="openid profile email offline_access"`, wwwAuthenticate)
 }
 
-func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_NoPolicy(t *testing.T) {
+func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_EmptyRuleset(t *testing.T) {
 	auth := &OIDCMiddleware{
 		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
 	}
@@ -152,8 +152,9 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *te
 
 func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 	auth := &OIDCMiddleware{
-		Policies: PolicySet{
+		Policies: Ruleset{
 			{
+				ID:     "TestRule",
 				Action: ActionAllow,
 				Matchers: caddyhttp.MatcherSet{
 					&MatchUser{Usernames: []string{"*"}},
@@ -183,4 +184,6 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 	assert.Equal(t, "test", repl.ReplaceAll("{http.auth.user.id}", ""))
 	assert.Equal(t, "xyz", repl.ReplaceAll("{http.auth.user.claim.aud}", ""))
 	assert.Equal(t, "read,write", repl.ReplaceAll("{http.auth.user.claim.roles}", ""))
+	assert.Equal(t, "TestRule", repl.ReplaceAll("{http.auth.rule}", ""))
+	assert.Equal(t, "allow", repl.ReplaceAll("{http.auth.result}", ""))
 }
