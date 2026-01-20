@@ -244,7 +244,7 @@ func (au *Authenticator) StartLogin(w http.ResponseWriter, r *http.Request) erro
 }
 
 // HandleCallback handles the callback from the authorization endpoint.
-func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
+func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) error {
 	if errValue := r.FormValue("error"); errValue != "" {
 		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("error: %s, description: %s", errValue, r.FormValue("error_description")))
 	}
