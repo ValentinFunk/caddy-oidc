@@ -55,6 +55,47 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth(t *testing.T) {
 	}
 }
 
+func TestOIDCMiddleware_ServeHTTP_MalformedJWT(t *testing.T) {
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer xxxxx")
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.Equal(t, 0, h.calls)
+
+	var he caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &he) {
+		assert.Equal(t, http.StatusUnauthorized, he.StatusCode)
+	}
+}
+
+func TestOIDCMiddleware_ServeHTTP_WithMissingUsernameClaim(t *testing.T) {
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Authenticator, error) {
+			au := GenerateTestAuthenticator()
+			au.uid = "invalid_claim"
+			return au, nil
+		}),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+
+	var he caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &he) {
+		assert.Equal(t, http.StatusUnauthorized, he.StatusCode)
+	}
+}
+
 func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
 	auth := &OIDCMiddleware{
 		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),

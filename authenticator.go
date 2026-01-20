@@ -86,12 +86,12 @@ func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, erro
 	var rawClaims *json.RawMessage
 	err := claims.Claims(&rawClaims)
 	if err != nil {
-		return nil, err
+		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
 
 	uid := gjson.GetBytes(*rawClaims, au.uid)
 	if !uid.Exists() || uid.Type != gjson.String {
-		return nil, fmt.Errorf("missing claim '%s' required for session username", au.uid)
+		return nil, caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("missing claim '%s' required for session username", au.uid))
 	}
 
 	session := &Session{
@@ -244,7 +244,7 @@ func (au *Authenticator) StartLogin(w http.ResponseWriter, r *http.Request) erro
 }
 
 // HandleCallback handles the callback from the authorization endpoint.
-func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request, _ caddyhttp.Handler) error {
+func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) error {
 	if errValue := r.FormValue("error"); errValue != "" {
 		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("error: %s, description: %s", errValue, r.FormValue("error_description")))
 	}
