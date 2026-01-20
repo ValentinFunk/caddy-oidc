@@ -93,7 +93,7 @@ func (mw *OIDCMiddleware) Validate() error {
 	return mw.Policies.Validate()
 }
 
-func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (mw *OIDCMiddleware) serveHTTPInternal(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	au, err := mw.au.Get(r.Context())
 	if err != nil {
 		return err
@@ -177,4 +177,22 @@ func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, nex
 	}
 
 	return caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
+}
+
+// ServeHTTP implements caddyhttp.MiddlewareHandler.
+// It wraps serveHTTPInternal to handle errors to ensure any error returned is a caddyhttp.HandlerError.
+// Without this, Caddy's error_directive does not properly set error replacer vars,
+// which can result in HTTP 200 responses when it tries to parse `{err.status_code}`.
+func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	err := mw.serveHTTPInternal(rw, r, next)
+	if err == nil {
+		return nil
+	}
+
+	var he *caddyhttp.HandlerError
+	if errors.As(err, &he) {
+		return he
+	}
+
+	return caddyhttp.Error(http.StatusInternalServerError, err)
 }
