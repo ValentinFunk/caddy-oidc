@@ -94,27 +94,26 @@ func (mw *OIDCMiddleware) Validate() error {
 }
 
 // interceptRequest intercepts the request and performs authentication and authorization checks.
-// It returns a nil error if the request should be allowed to proceed.
-// It returns the updated HTTP request that should be forwarded to the next handler in the chain.
-func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Request) (*http.Request, error) {
+// If returns "true" if the request was handled and a response was written.
+func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Request) (bool, error) {
 	au, err := mw.au.Get(r.Context())
 	if err != nil {
-		return r, err
+		return false, err
 	}
 
 	// Check if the request is an OAuth callback
 	if r.Method == http.MethodGet && r.URL.Path == au.redirectUri.Path {
-		return r, au.HandleCallback(rw, r)
+		return true, au.HandleCallback(rw, r)
 	}
 
 	// Check for supported well-knowns
 	if r.Method == http.MethodGet && r.URL.Path == WellKnownOAuthProtectedResourcePath {
-		return r, au.ServeHTTPOAuthProtectedResource(rw, r)
+		return true, au.ServeHTTPOAuthProtectedResource(rw, r)
 	}
 
 	s, err := au.Authenticate(r)
 	if err != nil {
-		return r, err
+		return false, err
 	}
 
 	// Set replacer vars
@@ -149,7 +148,7 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 
 	result, err := mw.Policies.Evaluate(r)
 	if err != nil {
-		return r, err
+		return false, err
 	}
 
 	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
@@ -159,7 +158,7 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 
 	switch result.Result {
 	case EvaluationResultAllow:
-		return r, nil
+		return false, nil
 	case EvaluationResultExplicitDeny:
 	case EvaluationResultImplicitDeny:
 		// If the evaluation result is an implicit reject, then check if the session is anonymous.
@@ -168,18 +167,18 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		//		Otherwise, return a 401 Unauthorized error.
 		if s.Anonymous {
 			if ShouldStartLogin(r) {
-				return r, au.StartLogin(rw, r)
+				return true, au.StartLogin(rw, r)
 			}
 
 			if rs, ok := au.ProtectedResourceMetadata(r); ok {
 				rw.Header().Set("WWW-Authenticate", rs.WWWAuthenticate())
 			}
 
-			return r, caddyhttp.Error(http.StatusUnauthorized, ErrAccessDenied)
+			return false, caddyhttp.Error(http.StatusUnauthorized, ErrAccessDenied)
 		}
 	}
 
-	return r, caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
+	return false, caddyhttp.Error(http.StatusForbidden, ErrAccessDenied)
 }
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
@@ -187,15 +186,19 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 // Without this, Caddy's error_directive does not properly set error replacer vars,
 // which can result in HTTP 200 responses when it tries to parse `{err.status_code}`.
 func (mw *OIDCMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	r, err := mw.interceptRequest(rw, r)
-	if err == nil {
-		return next.ServeHTTP(rw, r)
-	}
+	handled, err := mw.interceptRequest(rw, r)
+	if err != nil {
+		var he caddyhttp.HandlerError
+		if !errors.As(err, &he) {
+			he = caddyhttp.Error(http.StatusInternalServerError, err)
+		}
 
-	var he caddyhttp.HandlerError
-	if errors.As(err, &he) {
 		return he
 	}
 
-	return caddyhttp.Error(http.StatusInternalServerError, err)
+	if handled {
+		return nil
+	}
+
+	return next.ServeHTTP(rw, r)
 }

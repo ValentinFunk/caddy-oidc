@@ -86,12 +86,12 @@ func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, erro
 	var rawClaims *json.RawMessage
 	err := claims.Claims(&rawClaims)
 	if err != nil {
-		return nil, caddyhttp.Error(http.StatusBadRequest, err)
+		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
 
 	uid := gjson.GetBytes(*rawClaims, au.uid)
 	if !uid.Exists() || uid.Type != gjson.String {
-		return nil, caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("missing claim '%s' required for session username", au.uid))
+		return nil, caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("missing claim '%s' required for session username", au.uid))
 	}
 
 	session := &Session{
