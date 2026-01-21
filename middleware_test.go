@@ -227,4 +227,5 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 	assert.Equal(t, "read,write", repl.ReplaceAll("{http.auth.user.claim.roles}", ""))
 	assert.Equal(t, "TestRule", repl.ReplaceAll("{http.auth.rule}", ""))
 	assert.Equal(t, "allow", repl.ReplaceAll("{http.auth.result}", ""))
+	assert.Equal(t, "bearer", repl.ReplaceAll("{http.auth.method}", ""))
 }

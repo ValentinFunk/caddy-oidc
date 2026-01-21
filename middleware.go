@@ -20,6 +20,11 @@ func init() {
 	httpcaddyfile.RegisterDirectiveOrder("oidc", httpcaddyfile.Before, "basicauth")
 }
 
+const (
+	SessionCtxKey    caddy.CtxKey = "oidc_session"
+	AuthMethodCtxKey caddy.CtxKey = "oidc_auth_method"
+)
+
 var ErrAccessDenied = errors.New("access denied")
 
 var _ caddy.Module = (*OIDCMiddleware)(nil)
@@ -111,13 +116,14 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		return true, au.ServeHTTPOAuthProtectedResource(rw, r)
 	}
 
-	s, err := au.Authenticate(r)
+	m, s, err := au.Authenticate(r)
 	if err != nil {
 		return false, err
 	}
 
 	// Set replacer vars
 	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
+		repl.Set("http.auth.method", m.String())
 		repl.Set("http.auth.user.anonymous", s.Anonymous)
 		if !s.Anonymous {
 			repl.Set("http.auth.user.id", s.Uid)
@@ -143,8 +149,11 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		})
 	}
 
-	// Inject session into request context
-	r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, s))
+	// Inject context vars
+	ctx := context.WithValue(r.Context(), SessionCtxKey, s)
+	ctx = context.WithValue(ctx, AuthMethodCtxKey, m)
+
+	r = r.WithContext(ctx)
 
 	result, err := mw.Policies.Evaluate(r)
 	if err != nil {

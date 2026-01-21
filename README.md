@@ -321,6 +321,24 @@ allow {
 }
 ```
 
+### Auth Method
+
+Matches the authentication method used to authenticate the request.
+
+Possible values are
+
+- `none` - The request is not authenticated
+- `cookie` - The request was authenticated using a session cookie
+- `bearer` - The request was authenticated using a bearer JWT token
+
+```caddyfile
+# Deny all requests using JWT bearer authentication
+
+deny {
+    auth_method bearer
+}
+```
+
 # Placeholder Variables
 
 When a request passes through the `oidc` handler, the
@@ -330,6 +348,7 @@ following [placeholder](https://caddyserver.com/docs/conventions#placeholders) v
 |----------------------------|----------------------------------------------------------------------------------------|
 | `http.auth.user.id`        | The username extracted from the `username` option of the global directive              |
 | `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                           |
+| `http.auth.method`         | The authentication method of the request. One of `none`, `cookie` or `bearer`          |
 | `http.auth.user.claim.*`   | Set for each extracted claim from the `claim` option of the global directive           |
 | `http.auth.rule`           | The named access policy rule that matched the request                                  |
 | `http.auth.result`         | The acccess rule evaluation result. One of `allow`, `implicit deny` or `explicit deny` |

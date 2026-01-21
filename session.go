@@ -5,18 +5,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/securecookie"
 )
 
-var AnonymousSession = &Session{Anonymous: true, Claims: json.RawMessage(`{}`)}
-
-var SessionCtxKey caddy.CtxKey = "oidc_session"
+var (
+	AnonymousSession = &Session{
+		Anonymous: true,
+		Claims:    json.RawMessage(`{}`),
+	}
+)
 
 type Session struct {
-	Uid       string          `json:"u"`
 	Anonymous bool            `json:"-"`
+	Uid       string          `json:"u"`
 	ExpiresAt int64           `json:"e,omitempty"`
 	Claims    json.RawMessage `json:"c,omitempty"`
 }

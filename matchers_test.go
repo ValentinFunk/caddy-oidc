@@ -300,3 +300,48 @@ func TestMatchClaim_MatchWithError(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchAuthMethod_MatchWithError(t *testing.T) {
+	tests := []struct {
+		name    string
+		method  AuthMethod
+		matcher MatchAuthMethod
+		match   bool
+	}{
+		{
+			name:   "unmatched",
+			method: AuthMethodNone,
+			matcher: MatchAuthMethod{
+				Match: []AuthMethod{AuthMethodCookie, AuthMethodBearer},
+			},
+			match: false,
+		},
+		{
+			name:   "match one",
+			method: AuthMethodCookie,
+			matcher: MatchAuthMethod{
+				Match: []AuthMethod{AuthMethodCookie},
+			},
+			match: true,
+		},
+		{
+			name:   "match any",
+			method: AuthMethodCookie,
+			matcher: MatchAuthMethod{
+				Match: []AuthMethod{AuthMethodBearer, AuthMethodCookie},
+			},
+			match: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			r = r.WithContext(context.WithValue(r.Context(), AuthMethodCtxKey, tt.method))
+
+			ok, err := tt.matcher.MatchWithError(r)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.match, ok)
+		})
+	}
+}
