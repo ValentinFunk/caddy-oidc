@@ -209,6 +209,22 @@ func TestMatchClaim_MatchWithError(t *testing.T) {
 			match: false,
 		},
 		{
+			name:   "match claim with no values",
+			claims: `{"foo": "bar"}`,
+			matcher: MatchClaim{
+				{Name: "foo"},
+			},
+			match: true,
+		},
+		{
+			name:   "match claim with no values missing claim",
+			claims: `{}`,
+			matcher: MatchClaim{
+				{Name: "foo"},
+			},
+			match: false,
+		},
+		{
 			name:   "match claim exist incorrect type",
 			claims: `{"sub": 1234}`,
 			matcher: MatchClaim{

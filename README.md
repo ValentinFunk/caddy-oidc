@@ -262,7 +262,8 @@ Matches claims in the request session.
 If the session claim is an array, then the request must match at least one value in the array.
 Any non-string claim values are ignored and will not match.
 
-Multiple values for a single claim directive are treated as a logical OR.
+Multiple values for a single claim directive are treated as a logical OR. If no values are specified,
+the matcher only checks for the claim's existence.
 
 > [!NOTE]
 > Any claims must be configured in the `oidc` directive `claim` option.
@@ -298,6 +299,16 @@ allow {
 allow {
     claim sub steve@example.com
     claim role read
+}
+```
+
+```caddyfile
+# Deny all requests missing the 'role' claim
+
+deny {
+    not {
+        claim role
+    }
 }
 ```
 
