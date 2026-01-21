@@ -174,10 +174,6 @@ func (m *MatchClaim) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			Values: d.RemainingArgs(),
 		}
 
-		if len(claim.Values) == 0 {
-			return d.Err("claim must have at least one value")
-		}
-
 		*m = append(*m, claim)
 	}
 
@@ -201,7 +197,7 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 			return false, nil
 		}
 
-		var foundMatch bool
+		var foundMatch = len(claimMatch.Values) == 0
 	findMatch:
 		for _, claimValue := range claimMatch.Values {
 			claimValueVal := repl.ReplaceAll(claimValue, "")
