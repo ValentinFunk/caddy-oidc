@@ -14,6 +14,7 @@ func init() {
 	caddy.RegisterModule(new(MatchUser))
 	caddy.RegisterModule(new(MatchAnonymous))
 	caddy.RegisterModule(new(MatchClaim))
+	caddy.RegisterModule(new(MatchAuthMethod))
 }
 
 // MatchWildcard matches a possible wildcard pattern against a value.
@@ -238,4 +239,59 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 func (m *MatchClaim) Match(r *http.Request) bool {
 	ok, _ := m.MatchWithError(r)
 	return ok
+}
+
+var (
+	_ caddy.Module                      = (*MatchAuthMethod)(nil)
+	_ caddyfile.Unmarshaler             = (*MatchAuthMethod)(nil)
+	_ caddyhttp.RequestMatcherWithError = (*MatchAuthMethod)(nil)
+)
+
+// MatchAuthMethod matches the authentication method used for the incoming request.
+type MatchAuthMethod struct {
+	Match []AuthMethod `json:"match,omitempty"`
+}
+
+func (*MatchAuthMethod) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.matchers.auth_method",
+		New: func() caddy.Module { return new(MatchAuthMethod) },
+	}
+}
+
+func (m *MatchAuthMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		var methodVal string
+		if !d.Args(&methodVal) {
+			return d.ArgErr()
+		}
+
+		method, err := ParseAuthMethod(methodVal)
+		if err != nil {
+			return err
+		}
+
+		m.Match = append(m.Match, method)
+
+		if d.NextBlock(0) {
+			return d.Err("unexpected block")
+		}
+	}
+	return nil
+}
+
+func (m *MatchAuthMethod) MatchWithError(r *http.Request) (bool, error) {
+	authMethod, ok := r.Context().Value(AuthMethodCtxKey).(AuthMethod)
+	if !ok {
+		// If the auth method isn't set in the request context, default to none
+		authMethod = AuthMethodNone
+	}
+
+	for _, method := range m.Match {
+		if method == authMethod {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

@@ -20,7 +20,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
+//go:generate go tool go-enum -f=$GOFILE --marshal
+
 var ErrNoAuthorization = errors.New("no authorization provided")
+
+// AuthMethod represents one of the supported authentication methods.
+// ENUM(none, bearer, cookie)
+type AuthMethod string
 
 type CSRFToken struct {
 	PKCEVerifier string `json:"v"`
@@ -123,73 +129,78 @@ func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, erro
 
 // SessionFromAuthorizationHeader extracts the session an access or ID token parsed from the request Authorization header.
 // Returns ErrNoAuthorization if a valid token could not be found or a valid, signed token exists but is expired.
-func (au *Authenticator) SessionFromAuthorizationHeader(r *http.Request) (*Session, error) {
+func (au *Authenticator) SessionFromAuthorizationHeader(r *http.Request) (AuthMethod, *Session, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthorization)
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthorization)
 	}
 
 	parts := strings.SplitN(authHeader, " ", 2)
 	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthorization)
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthorization)
 	}
 
 	id, err := au.verifier.Verify(r.Context(), parts[1])
 	if err != nil {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
 
-	return au.SessionFromClaims(id)
+	s, err := au.SessionFromClaims(id)
+	if err != nil {
+		return AuthMethodNone, nil, err
+	}
+
+	return AuthMethodBearer, s, nil
 }
 
 // SessionFromCookie extracts the session from the secure request cookie.
 // Returns ErrNoAuthorization if the cookie is not found or a signed token does exist but is not expired.
-func (au *Authenticator) SessionFromCookie(r *http.Request) (*Session, error) {
+func (au *Authenticator) SessionFromCookie(r *http.Request) (AuthMethod, *Session, error) {
 	cookiePlain, err := r.Cookie(au.cookie.Name)
 	if err != nil {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, errors.Join(ErrNoAuthorization, err))
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, errors.Join(ErrNoAuthorization, err))
 	}
 
 	var session Session
 	err = au.cookies.Decode(au.cookie.Name, cookiePlain.Value, &session)
 	if err != nil {
-		return nil, caddyhttp.Error(http.StatusBadRequest, err)
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusBadRequest, err)
 	}
 
 	// Validate the session cookie.
 	// TODO refresh token exchange
 	err = session.ValidateClock(au.clock())
 	if err != nil {
-		return nil, err
+		return AuthMethodNone, nil, err
 	}
 
-	return &session, nil
+	return AuthMethodCookie, &session, nil
 }
 
 // AuthFromRequestSources are request token sources that are expected to return a valid non-anonymous non-expired session if the error is not-nil.
 // Returning ErrNoAuthorization or *oidc.TokenExpiredError indicates that no valid token was found.
 // Any other error is returned directly.
-var AuthFromRequestSources = []func(*Authenticator, *http.Request) (*Session, error){
+var AuthFromRequestSources = []func(*Authenticator, *http.Request) (AuthMethod, *Session, error){
 	(*Authenticator).SessionFromAuthorizationHeader,
 	(*Authenticator).SessionFromCookie,
 }
 
 // Authenticate the incoming request by either reading a token from the Authorization header or the session token,
 // preferring an explicit token from the Authorization header.
-func (au *Authenticator) Authenticate(r *http.Request) (*Session, error) {
+func (au *Authenticator) Authenticate(r *http.Request) (AuthMethod, *Session, error) {
 	for _, source := range AuthFromRequestSources {
-		s, err := source(au, r)
+		m, s, err := source(au, r)
 		if err == nil {
-			return s, nil
+			return m, s, nil
 		}
 
 		var e *oidc.TokenExpiredError
 		if !errors.Is(err, ErrNoAuthorization) && !errors.As(err, &e) {
-			return nil, err
+			return AuthMethodNone, nil, err
 		}
 	}
 
-	return AnonymousSession, nil
+	return AuthMethodNone, AnonymousSession, nil
 }
 
 // GetAbsRedirectUri returns the absolute redirect URI, resolving it relative to the request URL if necessary.

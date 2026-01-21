@@ -165,8 +165,9 @@ func TestAuthenticator_Authenticate_WithBearerAuthentication(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 
-	s, err := pr.Authenticate(r)
+	m, s, err := pr.Authenticate(r)
 	if assert.NoError(t, err) {
+		assert.Equal(t, AuthMethodBearer, m)
 		assert.Equal(t, "test", s.Uid)
 		assert.Equal(t, json.RawMessage(`{"email":"x@example.org"}`), s.Claims)
 	}
@@ -183,8 +184,9 @@ func TestAuthenticator_Authenticate_WithSessionCookie(t *testing.T) {
 
 	r.AddCookie(cookie)
 
-	s, err = pr.Authenticate(r)
+	m, s, err := pr.Authenticate(r)
 	if assert.NoError(t, err) {
+		assert.Equal(t, AuthMethodCookie, m)
 		assert.Equal(t, "test", s.Uid)
 	}
 }
@@ -202,7 +204,7 @@ func TestAuthenticator_Authenticate_WithSessionCookie_SignedByOther(t *testing.T
 
 	r.AddCookie(cookie)
 
-	_, err = pr.Authenticate(r)
+	_, _, err = pr.Authenticate(r)
 	assert.Error(t, err)
 
 	var he caddyhttp.HandlerError
@@ -223,7 +225,7 @@ func TestAuthenticator_SessionFromCookie(t *testing.T) {
 
 	r.AddCookie(cookie)
 
-	_, err = pr.SessionFromCookie(r)
+	_, _, err = pr.SessionFromCookie(r)
 	assert.Error(t, err)
 
 	var e *oidc.TokenExpiredError
