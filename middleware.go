@@ -21,10 +21,15 @@ func init() {
 }
 
 const (
-	SessionCtxKey    caddy.CtxKey = "oidc_session"
+	// SessionCtxKey is the context key used to store the authentication session object.
+	// The context value is of type *Session.
+	SessionCtxKey caddy.CtxKey = "oidc_session"
+	// AuthMethodCtxKey is the context key used to store the authentication method used for the incoming request.
+	// The context value is of type AuthMethod.
 	AuthMethodCtxKey caddy.CtxKey = "oidc_auth_method"
 )
 
+// ErrAccessDenied is returned when the request is denied access.
 var ErrAccessDenied = errors.New("access denied")
 
 var _ caddy.Module = (*OIDCMiddleware)(nil)
@@ -33,6 +38,8 @@ var _ caddy.Validator = (*OIDCMiddleware)(nil)
 var _ caddyfile.Unmarshaler = (*OIDCMiddleware)(nil)
 var _ caddyhttp.MiddlewareHandler = (*OIDCMiddleware)(nil)
 
+// OIDCMiddleware is a middleware that authenticates and authorizes requests based on configured rules.
+// It's associated with a separately configured OIDC provider by name.
 type OIDCMiddleware struct {
 	Provider string  `json:"provider"`
 	Policies Ruleset `json:"policies"`
@@ -49,17 +56,18 @@ func (mw *OIDCMiddleware) CaddyModule() caddy.ModuleInfo {
 
 // UnmarshalCaddyfile sets up the OIDCMiddleware from Caddyfile tokens.
 /*
-oidc example {
-	allow|deny {
-		...
-	}
-}
+	oidc example {
+		allow|deny {
+			...
+		}
+    }
 */
 func (mw *OIDCMiddleware) UnmarshalCaddyfile(dis *caddyfile.Dispenser) error {
 	for dis.Next() {
 		if !dis.NextArg() {
 			return dis.ArgErr()
 		}
+
 		mw.Provider = dis.Val()
 
 		err := mw.Policies.UnmarshalCaddyfile(dis)
@@ -71,13 +79,16 @@ func (mw *OIDCMiddleware) UnmarshalCaddyfile(dis *caddyfile.Dispenser) error {
 	return nil
 }
 
+// Provision sets up the OIDCMiddleware by loading the configured OIDC provider
+// and then provisioning the configured ruleset for the middleware.
+// The named provider must be configured.
 func (mw *OIDCMiddleware) Provision(ctx caddy.Context) error {
-	val, err := ctx.AppIfConfigured(ModuleID)
+	val, err := ctx.AppIfConfigured(moduleID)
 	if err != nil {
 		return err
 	}
 
-	app := val.(*App)
+	app := val.(*App) //nolint:forcetypeassert
 
 	au, ok := app.provided[mw.Provider]
 	if !ok {
@@ -94,8 +105,40 @@ func (mw *OIDCMiddleware) Provision(ctx caddy.Context) error {
 	return nil
 }
 
+// Validate validates the configuration of the OIDCMiddleware.
 func (mw *OIDCMiddleware) Validate() error {
 	return mw.Policies.Validate()
+}
+
+func (*OIDCMiddleware) setReplacerVars(repl *caddy.Replacer, session *Session, authMethod AuthMethod) {
+	repl.Set("http.auth.method", authMethod.String())
+	repl.Set("http.auth.user.anonymous", session.Anonymous)
+
+	if !session.Anonymous {
+		repl.Set("http.auth.user.id", session.UID)
+	}
+
+	claimValues := gjson.ParseBytes(session.Claims)
+	claimValues.ForEach(func(key, value gjson.Result) bool {
+		var valueStringBuilder strings.Builder
+
+		switch {
+		case value.IsArray():
+			for i, v := range value.Array() {
+				if i > 0 {
+					valueStringBuilder.WriteByte(',')
+				}
+
+				valueStringBuilder.WriteString(v.String())
+			}
+		default:
+			valueStringBuilder.WriteString(value.String())
+		}
+
+		repl.Set("http.auth.user.claim."+key.String(), valueStringBuilder.String())
+
+		return true
+	})
 }
 
 // interceptRequest intercepts the request and performs authentication and authorization checks.
@@ -116,42 +159,19 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		return true, au.ServeHTTPOAuthProtectedResource(rw, r)
 	}
 
-	m, s, err := au.Authenticate(r)
+	authMethod, session, err := au.Authenticate(r)
 	if err != nil {
 		return false, err
 	}
 
 	// Set replacer vars
 	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
-		repl.Set("http.auth.method", m.String())
-		repl.Set("http.auth.user.anonymous", s.Anonymous)
-		if !s.Anonymous {
-			repl.Set("http.auth.user.id", s.Uid)
-		}
-
-		claimValues := gjson.ParseBytes(s.Claims)
-		claimValues.ForEach(func(key, value gjson.Result) bool {
-			var valueStringBuilder strings.Builder
-			switch {
-			case value.IsArray():
-				for i, v := range value.Array() {
-					if i > 0 {
-						valueStringBuilder.WriteByte(',')
-					}
-					valueStringBuilder.WriteString(v.String())
-				}
-			default:
-				valueStringBuilder.WriteString(value.String())
-			}
-
-			repl.Set(fmt.Sprintf("http.auth.user.claim.%s", key.String()), valueStringBuilder.String())
-			return true
-		})
+		mw.setReplacerVars(repl, session, authMethod)
 	}
 
 	// Inject context vars
-	ctx := context.WithValue(r.Context(), SessionCtxKey, s)
-	ctx = context.WithValue(ctx, AuthMethodCtxKey, m)
+	ctx := context.WithValue(r.Context(), SessionCtxKey, session)
+	ctx = context.WithValue(ctx, AuthMethodCtxKey, authMethod)
 
 	r = r.WithContext(ctx)
 
@@ -174,7 +194,7 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		// If anonymous:
 		//		Start the authorization flow if the request is likely coming from a browser.
 		//		Otherwise, return a 401 Unauthorized error.
-		if s.Anonymous {
+		if session.Anonymous {
 			if ShouldStartLogin(r) {
 				return true, au.StartLogin(rw, r)
 			}

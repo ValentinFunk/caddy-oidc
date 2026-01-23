@@ -14,6 +14,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gorilla/securecookie"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
@@ -49,7 +50,7 @@ func GenerateTestAuthenticator() *Authenticator {
 	return &Authenticator{
 		cookie: &Cookies{
 			Name:     "session",
-			SameSite: SameSite{http.SameSiteLaxMode},
+			SameSite: sameSite{http.SameSiteLaxMode},
 			Path:     "/",
 		},
 		clock: func() time.Time {
@@ -80,6 +81,8 @@ func (c claimsStr) Claims(v any) error {
 }
 
 func TestAuthenticator_SessionFromClaims(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		claims    claimsStr
@@ -90,7 +93,7 @@ func TestAuthenticator_SessionFromClaims(t *testing.T) {
 			name:   "basic",
 			claims: claimsStr(`{"sub": "test"}`),
 			expect: Session{
-				Uid:    "test",
+				UID:    "test",
 				Claims: json.RawMessage(`{}`),
 			},
 		},
@@ -98,7 +101,7 @@ func TestAuthenticator_SessionFromClaims(t *testing.T) {
 			name:   "with expiry",
 			claims: claimsStr(`{"sub": "test", "exp": 1577836800}`),
 			expect: Session{
-				Uid:       "test",
+				UID:       "test",
 				ExpiresAt: 1577836800,
 				Claims:    json.RawMessage(`{}`),
 			},
@@ -107,7 +110,7 @@ func TestAuthenticator_SessionFromClaims(t *testing.T) {
 			name:   "with claims partial",
 			claims: claimsStr(`{"sub": "test", "email": "x@example.org"}`),
 			expect: Session{
-				Uid:    "test",
+				UID:    "test",
 				Claims: json.RawMessage(`{"email":"x@example.org"}`),
 			},
 		},
@@ -115,7 +118,7 @@ func TestAuthenticator_SessionFromClaims(t *testing.T) {
 			name:   "with claims full",
 			claims: claimsStr(`{"sub": "test", "email": "x@example.org", "role": ["admin", "viewer"]}`),
 			expect: Session{
-				Uid:    "test",
+				UID:    "test",
 				Claims: json.RawMessage(`{"email":"x@example.org","role":["admin", "viewer"]}`),
 			},
 		},
@@ -123,36 +126,42 @@ func TestAuthenticator_SessionFromClaims(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			au := GenerateTestAuthenticator()
-			s, err := au.SessionFromClaims(tt.claims)
+
+			session, err := au.SessionFromClaims(tt.claims)
 			if tt.shouldErr {
 				assert.Error(t, err)
+
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.EqualValues(t, tt.expect, *s)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expect, *session)
 		})
 	}
 }
 
 func TestAuthenticator_StartLoginRedirectUrl(t *testing.T) {
-	pr := GenerateTestAuthenticator()
+	t.Parallel()
 
-	r := httptest.NewRequest("GET", "/", nil)
+	au := GenerateTestAuthenticator()
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "localhost"
 	r.Header.Set("X-Forwarded-Proto", "https")
 
 	w := httptest.NewRecorder()
 
-	err := pr.StartLogin(w, r)
-	assert.NoError(t, err)
+	err := au.StartLogin(w, r)
+	require.NoError(t, err)
 
 	redirectUrl, err := url.Parse(w.Header().Get("Location"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	postRedirectUrl, err := url.Parse(redirectUrl.Query().Get("redirect_uri"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.Equal(t, "https", postRedirectUrl.Scheme)
 	assert.Equal(t, "localhost", postRedirectUrl.Host)
@@ -160,52 +169,58 @@ func TestAuthenticator_StartLoginRedirectUrl(t *testing.T) {
 }
 
 func TestAuthenticator_Authenticate_WithBearerAuthentication(t *testing.T) {
+	t.Parallel()
+
 	pr := GenerateTestAuthenticator()
 
-	r := httptest.NewRequest("GET", "/", nil)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
 
 	m, s, err := pr.Authenticate(r)
 	if assert.NoError(t, err) {
 		assert.Equal(t, AuthMethodBearer, m)
-		assert.Equal(t, "test", s.Uid)
-		assert.Equal(t, json.RawMessage(`{"email":"x@example.org"}`), s.Claims)
+		assert.Equal(t, "test", s.UID)
+		assert.JSONEq(t, `{"email":"x@example.org"}`, string(s.Claims))
 	}
 }
 
 func TestAuthenticator_Authenticate_WithSessionCookie(t *testing.T) {
-	pr := GenerateTestAuthenticator()
+	t.Parallel()
 
-	r := httptest.NewRequest("GET", "/", nil)
+	au := GenerateTestAuthenticator()
 
-	s := &Session{Uid: "test"}
-	cookie, err := s.HttpCookie(pr.cookie, pr.cookies)
-	assert.NoError(t, err)
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	session := &Session{UID: "test"}
+	cookie, err := session.HTTPCookie(au.cookie, au.cookies)
+	require.NoError(t, err)
 
 	r.AddCookie(cookie)
 
-	m, s, err := pr.Authenticate(r)
+	m, session, err := au.Authenticate(r)
 	if assert.NoError(t, err) {
 		assert.Equal(t, AuthMethodCookie, m)
-		assert.Equal(t, "test", s.Uid)
+		assert.Equal(t, "test", session.UID)
 	}
 }
 
 func TestAuthenticator_Authenticate_WithSessionCookie_SignedByOther(t *testing.T) {
-	pr := GenerateTestAuthenticator()
+	t.Parallel()
 
-	r := httptest.NewRequest("GET", "/", nil)
+	au := GenerateTestAuthenticator()
 
-	s := &Session{Uid: "test"}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	s := &Session{UID: "test"}
 	cookieSigner := securecookie.New([]byte("EPb6FR6Uehz2uWdfhtb7l6c4tXzgMJT8"), []byte("EPb6FR6Uehz2uWdfhtb7l6c4tXzgMJT8"))
 
-	cookie, err := s.HttpCookie(pr.cookie, cookieSigner)
-	assert.NoError(t, err)
+	cookie, err := s.HTTPCookie(au.cookie, cookieSigner)
+	require.NoError(t, err)
 
 	r.AddCookie(cookie)
 
-	_, _, err = pr.Authenticate(r)
-	assert.Error(t, err)
+	_, _, err = au.Authenticate(r)
+	require.Error(t, err)
 
 	var he caddyhttp.HandlerError
 	if assert.ErrorAs(t, err, &he) {
@@ -214,50 +229,55 @@ func TestAuthenticator_Authenticate_WithSessionCookie_SignedByOther(t *testing.T
 }
 
 func TestAuthenticator_SessionFromCookie(t *testing.T) {
-	pr := GenerateTestAuthenticator()
+	t.Parallel()
 
-	r := httptest.NewRequest("GET", "/", nil)
+	au := GenerateTestAuthenticator()
 
-	s := &Session{Uid: "test", ExpiresAt: pr.clock().Add(-1 * time.Hour).Unix()}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	cookie, err := s.HttpCookie(pr.cookie, pr.cookies)
-	assert.NoError(t, err)
+	s := &Session{UID: "test", ExpiresAt: au.clock().Add(-1 * time.Hour).Unix()}
+
+	cookie, err := s.HTTPCookie(au.cookie, au.cookies)
+	require.NoError(t, err)
 
 	r.AddCookie(cookie)
 
-	_, _, err = pr.SessionFromCookie(r)
-	assert.Error(t, err)
+	_, _, err = au.SessionFromCookie(r)
 
 	var e *oidc.TokenExpiredError
 	assert.ErrorAs(t, err, &e)
 }
 
 func TestAuthenticator_ProtectedResourceMetadata(t *testing.T) {
+	t.Parallel()
+
 	pr := GenerateTestAuthenticator()
 
-	r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/endpoint?x=y", nil)
 
-	md, ok := pr.ProtectedResourceMetadata(r)
+	metadata, ok := pr.ProtectedResourceMetadata(r)
 	assert.True(t, ok)
-	assert.EqualValues(t, &OAuthProtectedResource{
+	assert.Equal(t, &OAuthProtectedResource{
 		Resource:               "http://example.com",
 		ScopesSupported:        []string{"openid", "profile", "email", "offline_access"},
 		BearerMethodsSupported: []string{"header"},
 		AuthorizationServers: []string{
 			"https://openid/example",
 		},
-	}, md)
+	}, metadata)
 }
 
 func TestAuthenticator_ProtectedResourceMetadata_WithAudience(t *testing.T) {
+	t.Parallel()
+
 	pr := GenerateTestAuthenticator()
 	pr.protectedResource.Audience = true
 
-	r := httptest.NewRequest("GET", "http://example.com/endpoint?x=y", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/endpoint?x=y", nil)
 
-	md, ok := pr.ProtectedResourceMetadata(r)
+	metadata, ok := pr.ProtectedResourceMetadata(r)
 	assert.True(t, ok)
-	assert.EqualValues(t, &OAuthProtectedResource{
+	assert.Equal(t, &OAuthProtectedResource{
 		Resource:               "http://example.com",
 		ScopesSupported:        []string{"openid", "profile", "email", "offline_access"},
 		BearerMethodsSupported: []string{"header"},
@@ -265,5 +285,5 @@ func TestAuthenticator_ProtectedResourceMetadata_WithAudience(t *testing.T) {
 		AuthorizationServers: []string{
 			"https://openid/example",
 		},
-	}, md)
+	}, metadata)
 }

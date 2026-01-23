@@ -9,9 +9,13 @@ import (
 )
 
 func TestSession_ValidateClock(t *testing.T) {
+	t.Parallel()
+
 	tRef := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	t.Run("valid", func(t *testing.T) {
+		t.Parallel()
+
 		var session = &Session{
 			ExpiresAt: tRef.Add(time.Hour).Unix(),
 		}
@@ -21,6 +25,8 @@ func TestSession_ValidateClock(t *testing.T) {
 	})
 
 	t.Run("valid with leeway", func(t *testing.T) {
+		t.Parallel()
+
 		var session = &Session{
 			ExpiresAt: tRef.Add(-time.Second).Unix(),
 		}
@@ -30,13 +36,15 @@ func TestSession_ValidateClock(t *testing.T) {
 	})
 
 	t.Run("expired", func(t *testing.T) {
+		t.Parallel()
+
 		var session = &Session{
 			ExpiresAt: tRef.Add(-time.Hour).Unix(),
 		}
 
 		err := session.ValidateClock(tRef)
-		var exp *oidc.TokenExpiredError
 
+		var exp *oidc.TokenExpiredError
 		if assert.ErrorAs(t, err, &exp) {
 			assert.True(t, exp.Expiry.Equal(tRef.Add(-time.Hour)))
 		}

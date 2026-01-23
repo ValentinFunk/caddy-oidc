@@ -9,13 +9,14 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var testKey = []byte("secret-key-for-testing-purposes-only")
 
 type TestKeySet struct{}
 
-func (TestKeySet) VerifySignature(ctx context.Context, token string) (payload []byte, err error) {
+func (TestKeySet) VerifySignature(_ context.Context, token string) ([]byte, error) {
 	jws, err := jose.ParseSigned(token, []jose.SignatureAlgorithm{jose.HS256})
 	if err != nil {
 		return nil, err
@@ -26,6 +27,7 @@ func (TestKeySet) VerifySignature(ctx context.Context, token string) (payload []
 
 type ExtendedClaims struct {
 	jwt.Claims
+
 	Email string   `json:"email"`
 	Roles []string `json:"roles,omitempty"`
 }
@@ -36,7 +38,7 @@ func GenerateTestJWT() string {
 		panic(err)
 	}
 
-	cl := ExtendedClaims{
+	claims := ExtendedClaims{
 		Claims: jwt.Claims{
 			Subject:  "test",
 			Issuer:   "http://openid/example",
@@ -46,14 +48,17 @@ func GenerateTestJWT() string {
 		Roles: []string{"read", "write"},
 	}
 
-	raw, err := jwt.Signed(sig).Claims(cl).Serialize()
+	raw, err := jwt.Signed(sig).Claims(claims).Serialize()
 	if err != nil {
 		panic(err)
 	}
+
 	return raw
 }
 
 func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		input     string
@@ -92,7 +97,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 				Claims:                []string{"email", "role"},
 				Cookie: &Cookies{
 					Name:     "session_id",
-					SameSite: SameSite{http.SameSiteStrictMode},
+					SameSite: sameSite{http.SameSiteStrictMode},
 					Insecure: true,
 					Path:     "/",
 				},
@@ -129,18 +134,21 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := new(OIDCProviderModule)
+			t.Parallel()
+
+			module := new(OIDCProviderModule)
 			d := caddyfile.NewTestDispenser(tt.input)
 
-			err := p.UnmarshalCaddyfile(d)
+			err := module.UnmarshalCaddyfile(d)
 
 			if tt.shouldErr {
 				assert.Error(t, err)
+
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.EqualValues(t, tt.expect, p)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expect, module)
 		})
 	}
 }

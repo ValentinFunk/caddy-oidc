@@ -9,9 +9,12 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMatchWildcard(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		pattern string
@@ -82,6 +85,8 @@ func TestMatchWildcard(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ok := MatchWildcard(tt.pattern, tt.input)
 			assert.Equal(t, tt.expect, ok)
 		})
@@ -89,6 +94,8 @@ func TestMatchWildcard(t *testing.T) {
 }
 
 func TestMatchUser_MatchWithError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		session Session
@@ -109,7 +116,7 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "match any user",
-			session: Session{Uid: "steve@example.com"},
+			session: Session{UID: "steve@example.com"},
 			matcher: MatchUser{
 				Usernames: []string{"*"},
 			},
@@ -117,7 +124,7 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "match exact multiple",
-			session: Session{Uid: "steve@example.com"},
+			session: Session{UID: "steve@example.com"},
 			matcher: MatchUser{
 				Usernames: []string{"bob@example.com", "steve@example.com"},
 			},
@@ -125,7 +132,7 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "match exact with replacer variable",
-			session: Session{Uid: "steve@example.com"},
+			session: Session{UID: "steve@example.com"},
 			matcher: MatchUser{
 				Usernames: []string{"steve@{test.domain}"},
 			},
@@ -135,6 +142,8 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			repl := caddy.NewReplacer()
 			repl.Set("test.domain", "example.com")
@@ -142,13 +151,15 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, &tt.session))
 
 			ok, err := tt.matcher.MatchWithError(r)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tt.match, ok)
 		})
 	}
 }
 
 func TestMatchAnonymous_MatchWithError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		session *Session
@@ -166,13 +177,15 @@ func TestMatchAnonymous_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "no match authenticated session",
-			session: &Session{Uid: "steve@example.com"},
+			session: &Session{UID: "steve@example.com"},
 			match:   false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 
 			if tt.session != nil {
@@ -181,13 +194,15 @@ func TestMatchAnonymous_MatchWithError(t *testing.T) {
 
 			matcher := MatchAnonymous{}
 			ok, err := matcher.MatchWithError(r)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tt.match, ok)
 		})
 	}
 }
 
 func TestMatchClaim_MatchWithError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		claims  string
@@ -301,6 +316,8 @@ func TestMatchClaim_MatchWithError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, &Session{
 				Claims: json.RawMessage(tt.claims),
@@ -311,13 +328,15 @@ func TestMatchClaim_MatchWithError(t *testing.T) {
 			r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
 
 			ok, err := tt.matcher.MatchWithError(r)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tt.match, ok)
 		})
 	}
 }
 
 func TestMatchAuthMethod_MatchWithError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		method  AuthMethod
@@ -352,11 +371,13 @@ func TestMatchAuthMethod_MatchWithError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
 			r = r.WithContext(context.WithValue(r.Context(), AuthMethodCtxKey, tt.method))
 
 			ok, err := tt.matcher.MatchWithError(r)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Equal(t, tt.match, ok)
 		})
 	}

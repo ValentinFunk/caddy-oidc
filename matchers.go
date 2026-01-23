@@ -1,7 +1,9 @@
 package caddy_oidc
 
 import (
+	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
@@ -63,6 +65,7 @@ func (m *MatchUser) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		m.Usernames = append(m.Usernames, username)
 	}
+
 	return nil
 }
 
@@ -82,10 +85,10 @@ func (m *MatchUser) MatchWithError(r *http.Request) (bool, error) {
 		return true, nil
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer) //nolint:forcetypeassert
 
 	for _, allowedVal := range m.Usernames {
-		if MatchWildcard(repl.ReplaceAll(allowedVal, ""), session.Uid) {
+		if MatchWildcard(repl.ReplaceAll(allowedVal, ""), session.UID) {
 			return true, nil
 		}
 	}
@@ -95,6 +98,7 @@ func (m *MatchUser) MatchWithError(r *http.Request) (bool, error) {
 
 func (m *MatchUser) Match(r *http.Request) bool {
 	ok, _ := m.MatchWithError(r)
+
 	return ok
 }
 
@@ -119,10 +123,12 @@ func (*MatchAnonymous) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if d.NextArg() {
 			return d.ArgErr()
 		}
+
 		if d.NextBlock(0) {
 			return d.Err("unexpected block")
 		}
 	}
+
 	return nil
 }
 
@@ -137,6 +143,7 @@ func (*MatchAnonymous) MatchWithError(r *http.Request) (bool, error) {
 
 func (m *MatchAnonymous) Match(r *http.Request) bool {
 	ok, _ := m.MatchWithError(r)
+
 	return ok
 }
 
@@ -146,9 +153,53 @@ var (
 	_ caddyhttp.RequestMatcherWithError = (*MatchClaim)(nil)
 )
 
+// A ClaimMatch represents a claim name and a list of (optional) allowed values for that claim.
 type ClaimMatch struct {
 	Name   string   `json:"name"`
 	Values []string `json:"values"`
+}
+
+// MatchWithRepl matches the session claims against the claim match.
+// Claims must be a valid gjson result containing a JSON object.
+// If there are no values to match, MatchWithRepl returns true as long as the claim exists.
+// Otherwise, at least one value must match.
+// Both names and values of the ClaimMatch are pre-processed using the replacer.
+func (cm *ClaimMatch) MatchWithRepl(repl *caddy.Replacer, claims *gjson.Result) bool {
+	sessionClaimValue := claims.Get(repl.ReplaceAll(cm.Name, ""))
+	if !sessionClaimValue.Exists() {
+		return false
+	}
+
+	// No values to match, check only for existence
+	if len(cm.Values) == 0 {
+		return true
+	}
+
+	for _, claimValue := range cm.Values {
+		matchClaimValue := repl.ReplaceAll(claimValue, "")
+
+		switch {
+		case sessionClaimValue.Type == gjson.String:
+			if MatchWildcard(matchClaimValue, sessionClaimValue.String()) {
+				return true
+			}
+		case sessionClaimValue.IsArray():
+			for _, claimValueMatchElem := range sessionClaimValue.Array() {
+				if claimValueMatchElem.Type != gjson.String {
+					continue
+				}
+
+				if MatchWildcard(matchClaimValue, claimValueMatchElem.String()) {
+					return true
+				}
+			}
+		default:
+			// Unsupported claim value type
+			return false
+		}
+	}
+
+	return false
 }
 
 // MatchClaim matches claims in a request session.
@@ -187,44 +238,15 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 		return false, nil
 	}
 
-	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer)
+	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer) //nolint:forcetypeassert
 
-	for _, claimMatch := range *m {
-		claimNameVal := repl.ReplaceAll(claimMatch.Name, "")
+	claims := gjson.ParseBytes(session.Claims)
+	if !claims.IsObject() {
+		return false, errors.New("invalid JSON object in session claims")
+	}
 
-		claimsValueMatch := gjson.GetBytes(session.Claims, claimNameVal)
-		if !claimsValueMatch.Exists() {
-			return false, nil
-		}
-
-		var foundMatch = len(claimMatch.Values) == 0
-	findMatch:
-		for _, claimValue := range claimMatch.Values {
-			claimValueVal := repl.ReplaceAll(claimValue, "")
-
-			switch {
-			case claimsValueMatch.Type == gjson.String:
-				if MatchWildcard(claimValueVal, claimsValueMatch.String()) {
-					foundMatch = true
-					break findMatch
-				}
-			case claimsValueMatch.IsArray():
-				for _, claimValueMatchElem := range claimsValueMatch.Array() {
-					if claimValueMatchElem.Type != gjson.String {
-						continue
-					}
-
-					if MatchWildcard(claimValueVal, claimValueMatchElem.String()) {
-						foundMatch = true
-						break findMatch
-					}
-				}
-			default:
-				return false, nil
-			}
-		}
-
-		if !foundMatch {
+	for _, cm := range *m {
+		if !cm.MatchWithRepl(repl, &claims) {
 			return false, nil
 		}
 	}
@@ -234,6 +256,7 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 
 func (m *MatchClaim) Match(r *http.Request) bool {
 	ok, _ := m.MatchWithError(r)
+
 	return ok
 }
 
@@ -273,6 +296,7 @@ func (m *MatchAuthMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.Err("unexpected block")
 		}
 	}
+
 	return nil
 }
 
@@ -283,11 +307,5 @@ func (m *MatchAuthMethod) MatchWithError(r *http.Request) (bool, error) {
 		authMethod = AuthMethodNone
 	}
 
-	for _, method := range m.Match {
-		if method == authMethod {
-			return true, nil
-		}
-	}
-
-	return false, nil
+	return slices.Contains(m.Match, authMethod), nil
 }

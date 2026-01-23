@@ -7,10 +7,11 @@ import (
 	"github.com/munnerz/goautoneg"
 )
 
-// RequestUrl returns the original fully qualified request URL made by the client before any intermediate proxies.
+// RequestURL returns the original fully qualified request URL made by the client before any intermediate proxies.
 // Assumes that Caddy has already sanitized any X-Forwarded-* headers.
-func RequestUrl(r *http.Request) *url.URL {
+func RequestURL(r *http.Request) *url.URL {
 	var u = new(url.URL)
+
 	*u = *r.URL
 
 	u.Scheme = "http"

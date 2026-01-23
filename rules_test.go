@@ -3,6 +3,7 @@ package caddy_oidc
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -10,24 +11,31 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRuleset_UnmarshalCaddyfile_WithID(t *testing.T) {
-	d := caddyfile.NewTestDispenser(`{
+	t.Parallel()
+
+	dispenser := caddyfile.NewTestDispenser(`{
 		allow s1 {
 			path /foo
 		}
 	}`)
 
-	var ps Ruleset
-	err := ps.UnmarshalCaddyfile(d)
-	assert.NoError(t, err)
-	if assert.Len(t, ps, 1) {
-		assert.Equal(t, "s1", ps[0].ID)
+	var ruleset Ruleset
+
+	err := ruleset.UnmarshalCaddyfile(dispenser)
+	require.NoError(t, err)
+
+	if assert.Len(t, ruleset, 1) {
+		assert.Equal(t, "s1", ruleset[0].ID)
 	}
 }
 
 func TestRuleset_Evaluate(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		input   string
@@ -40,7 +48,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 				allow { }
 			}`,
 			session: &Session{
-				Uid: "test",
+				UID: "test",
 			},
 			expect: EvaluationResultImplicitDeny,
 		},
@@ -52,7 +60,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 				}
 			}`,
 			session: &Session{
-				Uid: "test",
+				UID: "test",
 			},
 			expect: EvaluationResultExplicitDeny,
 		},
@@ -65,7 +73,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 				}
 			}`,
 			session: &Session{
-				Uid: "steve@example.com",
+				UID: "steve@example.com",
 			},
 			expect: EvaluationResultExplicitDeny,
 		},
@@ -160,19 +168,21 @@ func TestRuleset_Evaluate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			d := caddyfile.NewTestDispenser(tt.input)
 
-			var ps Ruleset
+			var ruleset Ruleset
 
-			err := ps.UnmarshalCaddyfile(d)
-			assert.NoError(t, err)
+			err := ruleset.UnmarshalCaddyfile(d)
+			require.NoError(t, err)
 
 			pCtx, _ := caddy.NewContext(caddy.Context{Context: context.Background()})
 
-			err = ps.Provision(pCtx)
-			assert.NoError(t, err)
+			err = ruleset.Provision(pCtx)
+			require.NoError(t, err)
 
-			r := httptest.NewRequest("GET", "/foo?foo=bar", nil)
+			r := httptest.NewRequest(http.MethodGet, "/foo?foo=bar", nil)
 			r.Header.Set("X-Api-Key", "xyz")
 			r.Header.Set("Referer", "https://example.com/page?q=123")
 			r = r.WithContext(context.WithValue(r.Context(), caddyhttp.VarsCtxKey, map[string]any{
@@ -185,8 +195,8 @@ func TestRuleset_Evaluate(t *testing.T) {
 			r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, repl))
 			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, tt.session))
 
-			e, err := ps.Evaluate(r)
-			assert.NoError(t, err)
+			e, err := ruleset.Evaluate(r)
+			require.NoError(t, err)
 			assert.Equalf(t, tt.expect, e.Result, "expected: %s, got: %s", tt.expect, e.Result)
 		})
 	}

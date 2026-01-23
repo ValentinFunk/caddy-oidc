@@ -5,9 +5,12 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_Caddyfile_ParseFull(t *testing.T) {
+	t.Parallel()
+
 	const caddyfile = `{
 	auto_https off
 	oidc example1 {
@@ -51,6 +54,6 @@ example2.org {
 	adapter := caddyconfig.GetAdapter("caddyfile")
 
 	_, warnings, err := adapter.Adapt([]byte(caddyfile), nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Empty(t, warnings)
 }

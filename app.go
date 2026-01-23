@@ -11,7 +11,7 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-const ModuleID = "oidc"
+const moduleID = "oidc"
 
 func init() {
 	caddy.RegisterModule(new(App))
@@ -41,7 +41,9 @@ func parseGlobalConfig(d *caddyfile.Dispenser, prev any) (any, error) {
 		var name = d.Val()
 
 		var config OIDCProviderModule
-		if err := config.UnmarshalCaddyfile(d); err != nil {
+
+		err := config.UnmarshalCaddyfile(d)
+		if err != nil {
 			return nil, err
 		}
 
@@ -49,23 +51,25 @@ func parseGlobalConfig(d *caddyfile.Dispenser, prev any) (any, error) {
 	}
 
 	return httpcaddyfile.App{
-		Name:  ModuleID,
+		Name:  moduleID,
 		Value: caddyconfig.JSON(&app, nil),
 	}, nil
 }
 
+//nolint:ireturn
 func parseCaddyfileHandler[T any, Ptr interface {
 	*T
 	caddyfile.Unmarshaler
 	caddyhttp.MiddlewareHandler
 }](h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	m := new(T)
-	err := Ptr(m).UnmarshalCaddyfile(h.Dispenser)
+	handler := new(T)
+
+	err := Ptr(handler).UnmarshalCaddyfile(h.Dispenser)
 	if err != nil {
 		return nil, err
 	}
 
-	return Ptr(m), nil
+	return Ptr(handler), nil
 }
 
 var _ caddy.App = (*App)(nil)
@@ -73,6 +77,7 @@ var _ caddy.Module = (*App)(nil)
 var _ caddy.Validator = (*App)(nil)
 var _ caddy.Provisioner = (*App)(nil)
 
+// App holds configuration for all the named OIDC providers within a Caddy configuration.
 type App struct {
 	Providers map[string]*OIDCProviderModule `json:"providers,omitempty"`
 	provided  map[string]*DeferredResult[*Authenticator]
@@ -80,7 +85,7 @@ type App struct {
 
 func (*App) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  ModuleID,
+		ID:  moduleID,
 		New: func() caddy.Module { return new(App) },
 	}
 }
@@ -91,18 +96,18 @@ func (*App) Stop() error  { return nil }
 func (a *App) Provision(ctx caddy.Context) error {
 	a.provided = make(map[string]*DeferredResult[*Authenticator], len(a.Providers))
 
-	for k := range a.Providers {
-		var p = a.Providers[k]
+	for providerName := range a.Providers {
+		var provider = a.Providers[providerName]
 
-		err := p.Provision(ctx)
+		err := provider.Provision(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to provision oidc provider '%s': %w", k, err)
+			return fmt.Errorf("failed to provision oidc provider '%s': %w", providerName, err)
 		}
 
 		// Built authenticator configuration is deferred as we don't want to block provision during OIDC discovery.
 		// Doing so might mean discovery isn't even possible until Caddy fully initializes if the IDP is proxied by Caddy as well.
-		a.provided[k] = Defer(func() (*Authenticator, error) {
-			return p.Create(ctx)
+		a.provided[providerName] = Defer(func() (*Authenticator, error) {
+			return provider.Create(ctx)
 		})
 	}
 
@@ -111,9 +116,11 @@ func (a *App) Provision(ctx caddy.Context) error {
 
 func (a *App) Validate() error {
 	for k, p := range a.Providers {
-		if err := p.Validate(); err != nil {
+		err := p.Validate()
+		if err != nil {
 			return fmt.Errorf("oidc provider '%s' validation failed: %w", k, err)
 		}
 	}
+
 	return nil
 }

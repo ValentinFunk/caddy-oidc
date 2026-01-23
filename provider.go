@@ -25,8 +25,10 @@ func init() {
 }
 
 const (
+	// DefaultRedirectUriPath is the default redirect URI used for OAuth callback if none is specified.
 	DefaultRedirectUriPath = "/oauth2/callback"
-	DefaultUsernameClaim   = "sub"
+	// DefaultUsernameClaim is the default username claim to use if none is specified.
+	DefaultUsernameClaim = "sub"
 )
 
 var _ caddy.Module = (*OIDCProviderModule)(nil)
@@ -34,7 +36,7 @@ var _ caddy.Provisioner = (*OIDCProviderModule)(nil)
 var _ caddy.Validator = (*OIDCProviderModule)(nil)
 var _ caddyfile.Unmarshaler = (*OIDCProviderModule)(nil)
 
-// OIDCProviderModule holds the configuration for an OIDC provider
+// OIDCProviderModule holds the configuration for an OIDC provider.
 type OIDCProviderModule struct {
 	Issuer                    string                                  `json:"issuer"`
 	ClientID                  string                                  `json:"client_id"`
@@ -50,26 +52,26 @@ type OIDCProviderModule struct {
 
 func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  ModuleID + ".provider",
+		ID:  moduleID + ".provider",
 		New: func() caddy.Module { return new(OIDCProviderModule) },
 	}
 }
 
 // UnmarshalCaddyfile sets up the OIDCProviderModule instance from Caddyfile tokens.
 /*
-{
-	issuer <issuer>
-	client_id <client_id>
-	redirect_uri [<redirect_uri>]
-	secret_key <secret_key>
-	tls_insecure_skip_verify
-	discovery_url <discovery_url>
-	scope [<scope>...]
-	username <username>
-	claim [<claim>...]
-	protected_resource <protected_resource>
-	cookie <cookie>
-}
+	{
+		issuer <issuer>
+		client_id <client_id>
+		redirect_uri [<redirect_uri>]
+		secret_key <secret_key>
+		tls_insecure_skip_verify
+		discovery_url <discovery_url>
+		scope [<scope>...]
+		username <username>
+		claim [<claim>...]
+		protected_resource <protected_resource>
+		cookie <cookie>
+	}
 */
 func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
@@ -78,33 +80,43 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			m.Issuer = d.Val()
 		case "client_id":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			m.ClientID = d.Val()
 		case "redirect_uri":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			m.RedirectURI = d.Val()
 		case "secret_key":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			m.SecretKey = d.Val()
 		case "cookie":
 			m.Cookie = new(Cookies)
-			*m.Cookie = DefaultCookieOptions // Apply defaults
+			*m.Cookie = DefaultCookieOptions() // Apply defaults
+
 			d.Prev()
-			if err := m.Cookie.UnmarshalCaddyfile(d); err != nil {
+
+			err := m.Cookie.UnmarshalCaddyfile(d)
+			if err != nil {
 				return err
 			}
 		case "protected_resource_metadata":
 			m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
+
 			d.Prev()
-			if err := m.ProtectedResourceMetadata.UnmarshalCaddyfile(d); err != nil {
+
+			err := m.ProtectedResourceMetadata.UnmarshalCaddyfile(d)
+			if err != nil {
 				return err
 			}
 		case "tls_insecure_skip_verify":
@@ -115,6 +127,7 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			m.Username = d.Val()
 		case "claim":
 			m.Claims = append(m.Claims, d.RemainingArgs()...)
@@ -128,11 +141,12 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 func (m *OIDCProviderModule) Provision(_ caddy.Context) error {
 	var repl = caddy.NewReplacer()
+
 	m.SecretKey = repl.ReplaceAll(m.SecretKey, "")
 
 	if m.Cookie == nil {
 		m.Cookie = new(Cookies)
-		*m.Cookie = DefaultCookieOptions
+		*m.Cookie = DefaultCookieOptions()
 	}
 
 	if m.ProtectedResourceMetadata == nil {
@@ -158,41 +172,39 @@ func (m *OIDCProviderModule) Validate() error {
 	if m.Issuer == "" {
 		return errors.New("issuer cannot be empty")
 	}
+
 	if m.ClientID == "" {
 		return errors.New("client_id cannot be empty")
 	}
+
 	if m.SecretKey == "" {
 		return errors.New("secret_key cannot be empty")
 	}
+
 	if len(m.SecretKey) != 32 && len(m.SecretKey) != 64 {
 		return errors.New("secret_key must be 32 or 64 bytes")
 	}
+
 	if m.Username == "" {
 		return errors.New("username cannot be empty")
 	}
 
-	if err := m.Cookie.Validate(); err != nil {
+	err := m.Cookie.Validate()
+	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// Create creates an Authenticator instance from this provider configuration.
-func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
-	redirectUri, err := url.Parse(m.RedirectURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid redirect_uri: %w", err)
-	}
-
-	log := ctx.Logger(m)
-
-	// Set up a retryable HTTP client to inject into the provider for discovery.
+// setupHTTPClient creates a new HTTP client from provider configuration for communicating with the OIDC provider.
+func (m *OIDCProviderModule) setupHTTPClient(log *zap.Logger) *http.Client {
 	retryClient := retryablehttp.NewClient()
 	retryClient.Logger = slog.New(zapslog.NewHandler(log.Core(), zapslog.WithName(log.Name()), zapslog.WithCaller(false)))
 	retryClient.RetryMax = 5
 
 	// Copy the default settings from HTTP DefaultTransport
+	//nolint:forcetypeassert
 	retryClientTransport := http.DefaultTransport.(*http.Transport).Clone()
 	if m.TLSInsecureSkipVerify {
 		if retryClientTransport.TLSClientConfig == nil {
@@ -206,23 +218,34 @@ func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
 		Transport: retryClientTransport,
 	}
 
-	httpClient := retryClient.StandardClient()
+	return retryClient.StandardClient()
+}
 
-	var authorizer = &Authenticator{
-		log:               log,
-		redirectUri:       redirectUri,
-		uid:               m.Username,
-		claims:            m.Claims,
-		clock:             time.Now,
-		cookies:           securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
-		cookie:            m.Cookie,
-		protectedResource: m.ProtectedResourceMetadata,
-		issuer:            m.Issuer,
+// Create creates an Authenticator instance from this provider configuration.
+func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
+	redirectUri, err := url.Parse(m.RedirectURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid redirect_uri: %w", err)
 	}
 
-	authorizer.log.Debug("performing OIDC discovery")
+	var (
+		log        = ctx.Logger(m)
+		httpClient = m.setupHTTPClient(log)
+		authorizer = &Authenticator{
+			log:               log,
+			redirectUri:       redirectUri,
+			uid:               m.Username,
+			claims:            m.Claims,
+			clock:             time.Now,
+			cookies:           securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
+			cookie:            m.Cookie,
+			protectedResource: m.ProtectedResourceMetadata,
+			issuer:            m.Issuer,
+		}
+	)
 
 	providerCtx := context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+
 	provider, err := oidc.NewProvider(providerCtx, m.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc discovery failed: %w", err)

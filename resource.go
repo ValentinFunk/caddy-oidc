@@ -1,7 +1,7 @@
 package caddy_oidc
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -9,16 +9,17 @@ import (
 
 var _ caddyfile.Unmarshaler = (*ProtectedResourceMetadataConfiguration)(nil)
 
+// ProtectedResourceMetadataConfiguration configures the protected resource metadata endpoint.
 type ProtectedResourceMetadataConfiguration struct {
 	Disable  bool `json:"disable"`
 	Audience bool `json:"audience,omitempty"`
 }
 
 // UnmarshalCaddyfile sets up the ProtectedResourceMetadataConfiguration from Caddyfile tokens.
-/* syntax
-protected_resource_metadata disable | {
-	audience
-}
+/*
+	protected_resource_metadata disable | {
+		audience
+	}
 */
 func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
@@ -28,8 +29,10 @@ func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile
 	if d.NextArg() {
 		if d.Val() == "off" {
 			c.Disable = true
+
 			return nil
 		}
+
 		return d.ArgErr()
 	}
 
@@ -38,7 +41,7 @@ func (c *ProtectedResourceMetadataConfiguration) UnmarshalCaddyfile(d *caddyfile
 		case "audience":
 			c.Audience = true
 		default:
-			return fmt.Errorf("unrecognized protected_resource_metadata subdirective '%s'", d.Val())
+			return d.Errf("unrecognized protected_resource_metadata subdirective '%s'", d.Val())
 		}
 	}
 
@@ -62,12 +65,12 @@ type OAuthProtectedResource struct {
 // https://datatracker.ietf.org/doc/html/rfc6750#section-3
 func (md *OAuthProtectedResource) WWWAuthenticate() string {
 	var params = []string{
-		fmt.Sprintf("resource_metadata=%q", fmt.Sprintf("%s/.well-known/oauth-protected-resource", md.Resource)),
+		"resource_metadata=" + strconv.Quote(md.Resource+"/.well-known/oauth-protected-resource"),
 	}
 
 	if len(md.ScopesSupported) > 0 {
-		params = append(params, fmt.Sprintf("scope=%q", strings.Join(md.ScopesSupported, " ")))
+		params = append(params, "scope="+strconv.Quote(strings.Join(md.ScopesSupported, " ")))
 	}
 
-	return fmt.Sprintf("Bearer %s", strings.Join(params, ", "))
+	return "Bearer " + strings.Join(params, ", ")
 }
