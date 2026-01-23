@@ -6,9 +6,12 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCookieOptions_UnmarshalCaddyfile(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		input     string
@@ -33,7 +36,7 @@ func TestCookieOptions_UnmarshalCaddyfile(t *testing.T) {
 			}`,
 			expect: Cookies{
 				Name:     "block_cookie",
-				SameSite: SameSite{http.SameSiteStrictMode},
+				SameSite: sameSite{http.SameSiteStrictMode},
 				Insecure: true,
 				Domain:   "example.com",
 				Path:     "/auth",
@@ -50,18 +53,22 @@ func TestCookieOptions_UnmarshalCaddyfile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			d := caddyfile.NewTestDispenser(tt.input)
 
-			var o Cookies
-			err := o.UnmarshalCaddyfile(d)
+			var cookies Cookies
+
+			err := cookies.UnmarshalCaddyfile(d)
 
 			if tt.shouldErr {
 				assert.Error(t, err)
+
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.EqualValues(t, tt.expect, o)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expect, cookies)
 		})
 	}
 }

@@ -22,33 +22,50 @@ import (
 
 //go:generate go tool go-enum -f=$GOFILE --marshal
 
-var ErrNoAuthorization = errors.New("no authorization provided")
+var (
+	// ErrNoAuthentication is returned when no valid authentication could be found in the request.
+	ErrNoAuthentication = errors.New("no valid authentication credentials provided")
+	// ErrNoIdToken is returned when an OAuth2 code exchange response does not contain an ID token.
+	ErrNoIdToken = errors.New("authentication server did not return an ID token")
+)
+
+// MissingRequiredClaimError is returned when a required claim is not provided.
+type MissingRequiredClaimError struct {
+	Claim string
+}
+
+func (e MissingRequiredClaimError) Error() string {
+	return fmt.Sprintf("request authentication is missing the required claim '%s'", e.Claim)
+}
 
 // AuthMethod represents one of the supported authentication methods.
 // ENUM(none, bearer, cookie)
 type AuthMethod string
 
+// CSRFToken is the CSRF cookie payload when perform an OAuth2 Authorization Flow.
 type CSRFToken struct {
 	PKCEVerifier string `json:"v"`
 	RedirectURI  string `json:"r"`
 }
 
-// OAuth2Client is an interface for the oauth2 client.
-type OAuth2Client interface {
+// oauth2Client is an interface for the oauth2 client.
+type oauth2Client interface {
 	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	Scopes() []string
 	ClientID() string
 }
 
-// oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange
+// oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange.
 type oauth2ConfigWithHTTPClient struct {
-	httpClient *http.Client
 	*oauth2.Config
+
+	httpClient *http.Client
 }
 
 func (c *oauth2ConfigWithHTTPClient) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
+
 	return c.Config.Exchange(ctx, code, opts...)
 }
 
@@ -60,7 +77,7 @@ func (c *oauth2ConfigWithHTTPClient) ClientID() string {
 	return c.Config.ClientID
 }
 
-type UserInfoClient interface {
+type userInfoClient interface {
 	UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*oidc.UserInfo, error)
 }
 
@@ -70,7 +87,7 @@ type ClaimsDecoder interface {
 	Claims(v any) error
 }
 
-// Authenticator holds the built configuration for an OIDC provider and authentication logic
+// Authenticator holds the built configuration for an OIDC provider and authentication logic.
 type Authenticator struct {
 	log               *zap.Logger
 	redirectUri       *url.URL
@@ -80,8 +97,8 @@ type Authenticator struct {
 	verifier          *oidc.IDTokenVerifier
 	uid               string
 	claims            []string
-	userInfo          UserInfoClient
-	oauth2            OAuth2Client
+	userInfo          userInfoClient
+	oauth2            oauth2Client
 	cookie            *Cookies
 	cookies           *securecookie.SecureCookie
 }
@@ -90,6 +107,7 @@ type Authenticator struct {
 func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, error) {
 	// A bit of a hack to extract the original claims from the decoder
 	var rawClaims *json.RawMessage
+
 	err := claims.Claims(&rawClaims)
 	if err != nil {
 		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
@@ -97,11 +115,11 @@ func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, erro
 
 	uid := gjson.GetBytes(*rawClaims, au.uid)
 	if !uid.Exists() || uid.Type != gjson.String {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, fmt.Errorf("missing claim '%s' required for session username", au.uid))
+		return nil, caddyhttp.Error(http.StatusUnauthorized, MissingRequiredClaimError{Claim: au.uid})
 	}
 
 	session := &Session{
-		Uid:    uid.String(),
+		UID:    uid.String(),
 		Claims: json.RawMessage(`{}`),
 	}
 
@@ -128,16 +146,16 @@ func (au *Authenticator) SessionFromClaims(claims ClaimsDecoder) (*Session, erro
 }
 
 // SessionFromAuthorizationHeader extracts the session an access or ID token parsed from the request Authorization header.
-// Returns ErrNoAuthorization if a valid token could not be found or a valid, signed token exists but is expired.
+// Returns ErrNoAuthentication if a valid token could not be found or a valid, signed token exists but is expired.
 func (au *Authenticator) SessionFromAuthorizationHeader(r *http.Request) (AuthMethod, *Session, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthorization)
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthentication)
 	}
 
-	parts := strings.SplitN(authHeader, " ", 2)
+	parts := strings.SplitN(authHeader, " ", 2) //nolint:mnd
 	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthorization)
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthentication)
 	}
 
 	id, err := au.verifier.Verify(r.Context(), parts[1])
@@ -154,21 +172,21 @@ func (au *Authenticator) SessionFromAuthorizationHeader(r *http.Request) (AuthMe
 }
 
 // SessionFromCookie extracts the session from the secure request cookie.
-// Returns ErrNoAuthorization if the cookie is not found or a signed token does exist but is not expired.
+// Returns ErrNoAuthentication if the cookie is not found or a signed token does exist but is not expired.
 func (au *Authenticator) SessionFromCookie(r *http.Request) (AuthMethod, *Session, error) {
 	cookiePlain, err := r.Cookie(au.cookie.Name)
 	if err != nil {
-		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, errors.Join(ErrNoAuthorization, err))
+		return AuthMethodNone, nil, caddyhttp.Error(http.StatusUnauthorized, errors.Join(ErrNoAuthentication, err))
 	}
 
 	var session Session
+
 	err = au.cookies.Decode(au.cookie.Name, cookiePlain.Value, &session)
 	if err != nil {
 		return AuthMethodNone, nil, caddyhttp.Error(http.StatusBadRequest, err)
 	}
 
 	// Validate the session cookie.
-	// TODO refresh token exchange
 	err = session.ValidateClock(au.clock())
 	if err != nil {
 		return AuthMethodNone, nil, err
@@ -177,10 +195,12 @@ func (au *Authenticator) SessionFromCookie(r *http.Request) (AuthMethod, *Sessio
 	return AuthMethodCookie, &session, nil
 }
 
-// AuthFromRequestSources are request token sources that are expected to return a valid non-anonymous non-expired session if the error is not-nil.
-// Returning ErrNoAuthorization or *oidc.TokenExpiredError indicates that no valid token was found.
+// authFromRequestSources are request token sources that are expected to return a valid non-anonymous non-expired session if the error is not-nil.
+// Returning ErrNoAuthentication or *oidc.TokenExpiredError indicates that no valid token was found.
 // Any other error is returned directly.
-var AuthFromRequestSources = []func(*Authenticator, *http.Request) (AuthMethod, *Session, error){
+//
+//nolint:gochecknoglobals
+var authFromRequestSources = []func(*Authenticator, *http.Request) (AuthMethod, *Session, error){
 	(*Authenticator).SessionFromAuthorizationHeader,
 	(*Authenticator).SessionFromCookie,
 }
@@ -188,19 +208,21 @@ var AuthFromRequestSources = []func(*Authenticator, *http.Request) (AuthMethod, 
 // Authenticate the incoming request by either reading a token from the Authorization header or the session token,
 // preferring an explicit token from the Authorization header.
 func (au *Authenticator) Authenticate(r *http.Request) (AuthMethod, *Session, error) {
-	for _, source := range AuthFromRequestSources {
+	for _, source := range authFromRequestSources {
 		m, s, err := source(au, r)
 		if err == nil {
 			return m, s, nil
 		}
 
 		var e *oidc.TokenExpiredError
-		if !errors.Is(err, ErrNoAuthorization) && !errors.As(err, &e) {
+		if !errors.Is(err, ErrNoAuthentication) && !errors.As(err, &e) {
 			return AuthMethodNone, nil, err
 		}
 	}
 
-	return AuthMethodNone, AnonymousSession, nil
+	var anon = AnonymousSession()
+
+	return AuthMethodNone, &anon, nil
 }
 
 // GetAbsRedirectUri returns the absolute redirect URI, resolving it relative to the request URL if necessary.
@@ -216,6 +238,7 @@ func (au *Authenticator) GetAbsRedirectUri(r *http.Request) string {
 	}
 
 	var u = *r.URL
+
 	u.Scheme = scheme
 	u.Host = r.Host
 
@@ -225,7 +248,7 @@ func (au *Authenticator) GetAbsRedirectUri(r *http.Request) string {
 // StartLogin starts the authorization flow by setting the state cookie and redirecting to the authorization endpoint.
 // The state cookie is in the format of `<cookie_name>|<state>`, with the value containing the PKCE code verifier.
 // The OAuth2 redirect URI is set to the configured redirect URI made absolute relative to the request URL.
-func (au *Authenticator) StartLogin(w http.ResponseWriter, r *http.Request) error {
+func (au *Authenticator) StartLogin(rw http.ResponseWriter, r *http.Request) error {
 	var (
 		state             = uuid.New().String()
 		pkceVerifier      = oauth2.GenerateVerifier()
@@ -242,30 +265,26 @@ func (au *Authenticator) StartLogin(w http.ResponseWriter, r *http.Request) erro
 	csrfCookie.Name = csrfCookieName
 	csrfCookie.MaxAge = 900 // 15-minute short expiry time for the CSRF cookie
 
-	http.SetCookie(w, csrfCookie)
+	http.SetCookie(rw, csrfCookie)
 
 	authCodeUrl := au.oauth2.AuthCodeURL(state,
 		oauth2.S256ChallengeOption(pkceVerifier),
 		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectUri(r)),
 	)
 
-	http.Redirect(w, r, authCodeUrl, http.StatusFound)
+	http.Redirect(rw, r, authCodeUrl, http.StatusFound)
 
 	return nil
 }
 
-// HandleCallback handles the callback from the authorization endpoint.
-func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) error {
-	if errValue := r.FormValue("error"); errValue != "" {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("error: %s, description: %s", errValue, r.FormValue("error_description")))
-	}
-
-	// Read CSRF state cookie
+// handleCallbackParseCSRFCookie parses the CSRF cookie from the request and returns the CSRF token payload.
+// If any CSRF cookie is found, then a Set-Cookie is sent to remove the cookie from the client.
+func (au *Authenticator) handleCallbackParseCSRFCookie(rw http.ResponseWriter, r *http.Request) (*CSRFToken, error) {
 	var csrfCookieName = fmt.Sprintf("%s|%s", au.cookie.Name, r.FormValue("state"))
 
 	csrfCookie, err := r.Cookie(csrfCookieName)
 	if err != nil {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid CSRF cookie: %w", err))
+		return nil, fmt.Errorf("invalid CSRF cookie: %w", err)
 	}
 
 	// Delete CSRF cookie
@@ -273,38 +292,62 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) 
 	deleteCsrfCookie.Name = csrfCookieName
 	deleteCsrfCookie.MaxAge = -1
 
-	http.SetCookie(w, deleteCsrfCookie)
+	http.SetCookie(rw, deleteCsrfCookie)
 
-	// Decode PKCE code verifier from CSRF cookie
 	var csrfToken CSRFToken
+
 	err = au.cookies.Decode(csrfCookieName, csrfCookie.Value, &csrfToken)
 	if err != nil {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("invalid CSRF cookie: %w", err))
+		return nil, fmt.Errorf("invalid CSRF cookie: %w", err)
 	}
 
-	// Exchange code for tokens
+	return &csrfToken, nil
+}
+
+// handleCallbackOAuthCodeExchange performs the OAuth2 token exchange using the PKCE code verifier.
+// It then verifies the ID token and returns the userinfo claims as well as the ID token expiry time.
+func (au *Authenticator) handleCallbackOAuthCodeExchange(r *http.Request, pkceVerifier string) (*oidc.UserInfo, time.Time, error) {
 	response, err := au.oauth2.Exchange(r.Context(), r.FormValue("code"),
-		oauth2.VerifierOption(csrfToken.PKCEVerifier),
+		oauth2.VerifierOption(pkceVerifier),
 		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectUri(r)),
 	)
-
 	if err != nil {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("failed to exchange token: %w", err))
+		return nil, time.Time{}, fmt.Errorf("failed to exchange token: %w", err)
 	}
 
 	idTokenPlain, ok := response.Extra("id_token").(string)
 	if !ok {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("no id_token in response"))
+		return nil, time.Time{}, ErrNoIdToken
 	}
 
 	_, err = au.verifier.Verify(r.Context(), idTokenPlain)
 	if err != nil {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("failed to verify id_token: %w", err))
+		return nil, time.Time{}, fmt.Errorf("failed to verify id_token: %w", err)
 	}
 
 	userInfo, err := au.userInfo.UserInfo(r.Context(), oauth2.StaticTokenSource(response))
 	if err != nil {
-		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("failed to fetch userinfo: %w", err))
+		return nil, time.Time{}, fmt.Errorf("failed to fetch userinfo: %w", err)
+	}
+
+	return userInfo, response.Expiry, nil
+}
+
+// HandleCallback handles the callback from the authorization endpoint.
+func (au *Authenticator) HandleCallback(rw http.ResponseWriter, r *http.Request) error {
+	if errValue := r.FormValue("error"); errValue != "" {
+		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("error: %s, description: %s", errValue, r.FormValue("error_description")))
+	}
+
+	csrfToken, err := au.handleCallbackParseCSRFCookie(rw, r)
+	if err != nil {
+		return caddyhttp.Error(http.StatusBadRequest, err)
+	}
+
+	// Exchange code for ID token
+	userInfo, idTokenExpires, err := au.handleCallbackOAuthCodeExchange(r, csrfToken.PKCEVerifier)
+	if err != nil {
+		return caddyhttp.Error(http.StatusBadRequest, err)
 	}
 
 	// Generate the session cookie and set it
@@ -314,14 +357,14 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Ensure the expiry information is taken from the ID token
-	session.ExpiresAt = response.Expiry.Unix()
+	session.ExpiresAt = idTokenExpires.Unix()
 
-	sessionCookie, err := session.HttpCookie(au.cookie, au.cookies)
+	sessionCookie, err := session.HTTPCookie(au.cookie, au.cookies)
 	if err != nil {
 		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("failed to create session cookie: %w", err))
 	}
 
-	http.SetCookie(w, sessionCookie)
+	http.SetCookie(rw, sessionCookie)
 
 	// Redirect to the configured redirect URI
 	var redirectUri = csrfToken.RedirectURI
@@ -329,7 +372,7 @@ func (au *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) 
 		redirectUri = "/" // Fall back to root
 	}
 
-	http.Redirect(w, r, redirectUri, http.StatusFound)
+	http.Redirect(rw, r, redirectUri, http.StatusFound)
 
 	return nil
 }
@@ -341,33 +384,36 @@ func (au *Authenticator) ProtectedResourceMetadata(r *http.Request) (*OAuthProte
 		return nil, false
 	}
 
-	var ru = RequestUrl(r)
-	var md = &OAuthProtectedResource{
-		Resource:        fmt.Sprintf("%s://%s", ru.Scheme, ru.Host),
-		ScopesSupported: au.oauth2.Scopes(),
-		AuthorizationServers: []string{
-			au.issuer,
-		},
-		// OIDC middleware only supports bearer authentication via the Authorization header
-		BearerMethodsSupported: []string{
-			"header",
-		},
-	}
+	var (
+		ru       = RequestURL(r)
+		metadata = &OAuthProtectedResource{
+			Resource:        fmt.Sprintf("%s://%s", ru.Scheme, ru.Host),
+			ScopesSupported: au.oauth2.Scopes(),
+			AuthorizationServers: []string{
+				au.issuer,
+			},
+			// OIDC middleware only supports bearer authentication via the Authorization header
+			BearerMethodsSupported: []string{
+				"header",
+			},
+		}
+	)
 
 	if au.protectedResource.Audience {
-		md.Audience = au.oauth2.ClientID()
+		metadata.Audience = au.oauth2.ClientID()
 	}
 
-	return md, true
+	return metadata, true
 }
 
+// WellKnownOAuthProtectedResourcePath is the path for the OAuth protected resource metadata endpoint.
 const WellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource"
 
 // ServeHTTPOAuthProtectedResource returns the OAuth protected resource metadata for the endpoint
 // .well-known/oauth-protected-resource.
 // If the endpoint is disabled, then a 404 not found response is returned.
 func (au *Authenticator) ServeHTTPOAuthProtectedResource(rw http.ResponseWriter, r *http.Request) error {
-	rs, ok := au.ProtectedResourceMetadata(r)
+	metadata, ok := au.ProtectedResourceMetadata(r)
 	if !ok {
 		return caddyhttp.Error(http.StatusNotFound, errors.New("protected resource metadata is disabled"))
 	}
@@ -378,5 +424,5 @@ func (au *Authenticator) ServeHTTPOAuthProtectedResource(rw http.ResponseWriter,
 	enc := json.NewEncoder(rw)
 	enc.SetIndent("", "  ")
 
-	return enc.Encode(rs)
+	return enc.Encode(metadata)
 }

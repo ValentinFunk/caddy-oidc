@@ -9,19 +9,22 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 )
 
-var DefaultCookieOptions = Cookies{
-	Name:     "caddy",
-	SameSite: SameSite{http.SameSiteLaxMode},
-	Insecure: false,
-	Domain:   "",
-	Path:     "/",
+// DefaultCookieOptions is the default cookie options for an OIDCProvider.
+func DefaultCookieOptions() Cookies {
+	return Cookies{
+		Name:     "caddy",
+		SameSite: sameSite{http.SameSiteLaxMode},
+		Insecure: false,
+		Domain:   "",
+		Path:     "/",
+	}
 }
 
-type SameSite struct {
+type sameSite struct {
 	http.SameSite
 }
 
-func (s *SameSite) UnmarshalText(text []byte) error {
+func (s *sameSite) UnmarshalText(text []byte) error {
 	switch text := string(text); text {
 	case "lax":
 		s.SameSite = http.SameSiteLaxMode
@@ -29,6 +32,8 @@ func (s *SameSite) UnmarshalText(text []byte) error {
 		s.SameSite = http.SameSiteStrictMode
 	case "none":
 		s.SameSite = http.SameSiteNoneMode
+	case "":
+		s.SameSite = http.SameSiteDefaultMode
 	default:
 		return fmt.Errorf("invalid same_site value: %s", text)
 	}
@@ -36,7 +41,7 @@ func (s *SameSite) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func (s *SameSite) String() string {
+func (s *sameSite) String() string {
 	switch s.SameSite {
 	case http.SameSiteLaxMode:
 		return "lax"
@@ -44,19 +49,26 @@ func (s *SameSite) String() string {
 		return "strict"
 	case http.SameSiteNoneMode:
 		return "none"
+	case http.SameSiteDefaultMode:
+		return ""
 	default:
 		return ""
 	}
 }
 
-func (s *SameSite) MarshalText() ([]byte, error) {
+func (s *sameSite) MarshalText() ([]byte, error) {
 	return []byte(s.String()), nil
 }
 
-func (s *SameSite) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+// UnmarshalCaddyfile sets up the sameSite from Caddyfile tokens.
+/*
+	same_site lax | strict | none | default
+*/
+func (s *sameSite) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.NextArg() {
 		return d.ArgErr()
 	}
+
 	switch d.Val() {
 	case "lax":
 		s.SameSite = http.SameSiteLaxMode
@@ -64,6 +76,8 @@ func (s *SameSite) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		s.SameSite = http.SameSiteStrictMode
 	case "none":
 		s.SameSite = http.SameSiteNoneMode
+	case "default":
+		s.SameSite = http.SameSiteDefaultMode
 	default:
 		return fmt.Errorf("invalid same_site value: %s", d.Val())
 	}
@@ -71,9 +85,9 @@ func (s *SameSite) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (s *SameSite) Validate() error {
+func (s *sameSite) Validate() error {
 	switch s.SameSite {
-	case http.SameSiteLaxMode, http.SameSiteStrictMode, http.SameSiteNoneMode:
+	case http.SameSiteLaxMode, http.SameSiteStrictMode, http.SameSiteNoneMode, http.SameSiteDefaultMode:
 		return nil
 	default:
 		return errors.New("same_site must be one of lax, strict, or none")
@@ -83,23 +97,24 @@ func (s *SameSite) Validate() error {
 var _ caddyfile.Unmarshaler = (*Cookies)(nil)
 var _ caddy.Validator = (*Cookies)(nil)
 
+// Cookies represent the cookie configuration for an OIDCProvider.
 type Cookies struct {
 	Name     string   `json:"name"`
-	SameSite SameSite `json:"same_site"`
+	SameSite sameSite `json:"same_site"`
 	Insecure bool     `json:"insecure,omitempty"`
 	Domain   string   `json:"domain,omitempty"`
 	Path     string   `json:"path"`
 }
 
 // UnmarshalCaddyfile sets up the Cookies from Caddyfile tokens.
-/* syntax
- cookie <name> | {
-	name <name>
-	same_site <same_site>
-	insecure
-	domain <domain>
-	path <path>
- }
+/*
+	cookie <name> | {
+		name <name>
+		same_site <same_site>
+		insecure
+		domain <domain>
+		path <path>
+	}
 */
 func (o *Cookies) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	if !d.Next() {
@@ -112,6 +127,7 @@ func (o *Cookies) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		if d.NextArg() {
 			return d.ArgErr()
 		}
+
 		return nil
 	}
 
@@ -121,6 +137,7 @@ func (o *Cookies) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			o.Name = d.Val()
 		case "same_site":
 			err := o.SameSite.UnmarshalCaddyfile(d)
@@ -133,11 +150,13 @@ func (o *Cookies) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			o.Domain = d.Val()
 		case "path":
 			if !d.NextArg() {
 				return d.ArgErr()
 			}
+
 			o.Path = d.Val()
 		default:
 			return d.Errf("unrecognized cookie subdirective: %s", d.Val())

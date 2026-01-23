@@ -20,28 +20,34 @@ type Action uint8
 // ENUM(implicit deny, explicit deny, allow)
 type EvaluationResult uint8
 
+// RuleEvaluation represents the result of evaluating a ruleset.
 type RuleEvaluation struct {
 	Result EvaluationResult `json:"result"`
-	RuleID string           `json:"rule_id"`
+	// The optional ID of the matched rule.
+	// If the result is EvaluationResultImplicitDeny, this field is always empty.
+	RuleID string `json:"rule_id"`
 }
 
 var _ caddy.Provisioner = (*Rule)(nil)
 var _ caddyhttp.RequestMatcherWithError = (*Rule)(nil)
 
+// A Rule represents a single authorization rule with an associated action to take when matched with a request.
 type Rule struct {
 	ID             string               `json:"id,omitempty"`
 	Action         Action               `json:"action"`
-	MatcherSetsRaw caddy.ModuleMap      `json:"match,omitempty" caddy:"namespace=http.matchers"`
+	MatcherSetsRaw caddy.ModuleMap      `caddy:"namespace=http.matchers" json:"match,omitempty"`
 	Matchers       caddyhttp.MatcherSet `json:"-"`
 }
 
+// Provision this rule by loading the matcher modules from MatcherSetsRaw.
+// Each loaded module must be a RequestMatcher or RequestMatcherWithError.
 func (r *Rule) Provision(ctx caddy.Context) error {
 	matchersIface, err := ctx.LoadModule(r, "MatcherSetsRaw")
 	if err != nil {
-		return fmt.Errorf("loading matcher modules: %v", err)
+		return fmt.Errorf("loading matcher modules: %w", err)
 	}
 
-	for _, matcher := range matchersIface.(map[string]any) {
+	for _, matcher := range matchersIface.(map[string]any) { //nolint:forcetypeassert
 		switch matcher.(type) {
 		case caddyhttp.RequestMatcherWithError:
 			r.Matchers = append(r.Matchers, matcher)
@@ -71,11 +77,19 @@ var _ caddyfile.Unmarshaler = (*Ruleset)(nil)
 var _ caddy.Provisioner = (*Ruleset)(nil)
 var _ caddy.Validator = (*Ruleset)(nil)
 
+// A Ruleset is a set of authorization rules.
 type Ruleset []*Rule
 
+// UnmarshalCaddyfile sets up the Ruleset from Caddyfile tokens.
+// Syntax:
+//
+//	allow|deny <rule_id> {
+//		...
+//	}
 func (rules *Ruleset) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextBlock(nesting); {
 		var pol Rule
+
 		switch d.Val() {
 		case "allow":
 			pol.Action = ActionAllow
@@ -88,6 +102,7 @@ func (rules *Ruleset) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		_ = d.Args(&pol.ID)
 
 		var err error
+
 		pol.MatcherSetsRaw, err = caddyhttp.ParseCaddyfileNestedMatcherSet(d)
 		if err != nil {
 			return err
@@ -99,6 +114,7 @@ func (rules *Ruleset) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
+// Provision all rules in the set.
 func (rules *Ruleset) Provision(ctx caddy.Context) error {
 	for _, p := range *rules {
 		err := p.Provision(ctx)
@@ -117,9 +133,11 @@ func (rules *Ruleset) ContainsAllow() bool {
 			return true
 		}
 	}
+
 	return false
 }
 
+// Validate checks if the set contains at least one ActionAllow rule.
 func (rules *Ruleset) Validate() error {
 	if !rules.ContainsAllow() {
 		return errors.New("no authorization rule is configured to allow access, all requests will be denied without at least one allow rule")
@@ -131,36 +149,38 @@ func (rules *Ruleset) Validate() error {
 // Evaluate all rules in the set and return the evaluation result.
 // At least one allow rule must match to return EvaluationResultAllow.
 // If any "deny" rule is matched, return EvaluationResultExplicitDeny.
-func (rules *Ruleset) Evaluate(r *http.Request) (e RuleEvaluation, err error) {
-	e.Result = EvaluationResultImplicitDeny
+func (rules *Ruleset) Evaluate(r *http.Request) (RuleEvaluation, error) {
+	eval := RuleEvaluation{
+		Result: EvaluationResultImplicitDeny,
+	}
 
-	for _, p := range *rules {
+	for _, rule := range *rules {
 		// Skip allow rule if already accepted.
-		if p.Action == ActionAllow && e.Result == EvaluationResultAllow {
+		if rule.Action == ActionAllow && eval.Result == EvaluationResultAllow {
 			continue
 		}
 
-		var ok bool
-		ok, err = p.MatchWithError(r)
+		isRuleMatched, err := rule.MatchWithError(r)
 		if err != nil {
-			return
+			return eval, err
 		}
 
-		if !ok {
+		if !isRuleMatched {
 			continue
 		}
 
-		e.RuleID = p.ID
+		eval.RuleID = rule.ID
 
-		switch p.Action {
+		switch rule.Action {
 		case ActionAllow:
-			e.Result = EvaluationResultAllow
+			eval.Result = EvaluationResultAllow
 		case ActionDeny:
 			// Return immediately on deny
-			e.Result = EvaluationResultExplicitDeny
-			return
+			eval.Result = EvaluationResultExplicitDeny
+
+			return eval, nil
 		}
 	}
 
-	return
+	return eval, nil
 }

@@ -1,0 +1,76 @@
+version: "2"
+linters:
+  default: all
+  disable:
+    - wsl
+    - cyclop
+    - gochecknoinits
+    - wrapcheck
+    - testpackage
+    - goconst
+    - exhaustruct
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - funlen
+          - goconst
+          - gochecknoglobals
+          - lll
+      - linters:
+          - funlen
+        text: "Function 'UnmarshalCaddyfile' has too many statements"
+      - linters:
+          - err113
+        text: "do not define dynamic errors, use wrapped static errors instead"
+      - linters:
+          - godot
+        source: "// ENUM"
+  settings:
+    varnamelen:
+      ignore-names:
+        - au
+        - tt
+      ignore-decls:
+        - rw http.ResponseWriter
+        - r *http.Request
+        - d *caddyfile.Dispenser
+        - w *httptest.ResponseRecorder
+        - u *url.URL
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    revive:
+      enable-default-rules: true
+      rules:
+        - name: exported
+          arguments:
+            - disable-checks-on-methods
+    recvcheck:
+      disable-builtin: false
+      exclusions:
+        - '*.UnmarshalText'
+        - '*.AppendText'
+    lll:
+      line-length: 160
+      tab-width: 4
+    funcorder:
+      struct-method: false
+    depguard:
+      rules:
+        main:
+          allow:
+            - $gostd
+            - github.com/caddyserver/caddy/v2
+            - github.com/tidwall/gjson
+            - github.com/tidwall/sjson
+            - go.uber.org/zap
+            - github.com/google/uuid
+            - github.com/gorilla/securecookie
+            - golang.org/x/oauth2
+            - github.com/coreos/go-oidc/v3/oidc
+            - github.com/go-jose/go-jose/v4
+            - github.com/hashicorp/go-retryablehttp
+            - github.com/munnerz/goautoneg
+            - github.com/stretchr/testify
