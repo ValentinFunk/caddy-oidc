@@ -40,7 +40,6 @@ The global directive is used to configure the OIDC provider. An example minimum 
     oidc example {
         issuer https://accounts.google.com
         client_id < client_id >
-        secret_key {env.OIDC_SECRET_KEY}
     }
 }
 ```
@@ -64,37 +63,12 @@ example.com {
 |-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
 | `issuer`                      | The OIDC issuer URL                                                                                                                                         |                    |
 | `client_id`                   | The OIDC client ID                                                                                                                                          |                    |
-| `secret_key`                  | A secret key used to sign cookies with, must be either 32 or 64 bytes long                                                                                  |                    |
 | `redirect_url`                | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. | `/oauth2/callback` |
 | `tls_insecure_skip_verify`    | (optional) Skip TLS certificate verification with the OIDC provider.                                                                                        |                    |
-| `scope`                       | (optional) The scope to request from the OIDC provider. The `openid` scope is required for browser-based login to work.                                     | `openid`           |
-| `username`                    | (optional) The claim to use as the username.                                                                                                                | `sub`              |
-| `claim`                       | (optional) A list of claims to include in the session. Used for request authorization. Any access policy rules that use a claim must be configured here.    |                    |
-| `cookie`                      | (optional) Configures the cookie used to store the authentication state.                                                                                    |                    |
+| `scope`                       | (optional) The scope to request from the OIDC provider. The `openid` scope is required for browser-based login to work. Defaults to `openid`.               | `openid`           |
+| `username`                    | (optional) The claim to use as the username. Defaults to `sub`.                                                                                             | `sub`              |
 | `protected_resource_metadata` | (optional) Configure or disable RFC9728 support.                                                                                                            |                    |
-
-### Cookie
-
-Cookie configuration is used to control how the authentication session cookie is set.
-The session cookie is a signed cookie containing minimal state about the user's authentication.
-
-| Option      | Description                                 |
-|-------------|---------------------------------------------|
-| `name`      | The name of the cookie.                     |
-| `domain`    | (optional) The domain of the cookie.        |
-| `path`      | (optional) The path of the cookie.          |
-| `insecure`  | (optional) Disable secure cookies.          |
-| `same_site` | (optional) The samesite mode of the cookie. |
-
-The default configuration is shown below.
-
-```caddyfile
-cookie {
-    name caddy
-    same_site lax
-    path /
-}
-```
+| `authenticate`                | (optional) Configure one more [authentication methods](#authentication-methods) by overriding the default methods                                           |
 
 ### [RFC9728](https://datatracker.ietf.org/doc/rfc9728/) Support (`protected_resource_metadata`)
 
@@ -115,8 +89,8 @@ protected_resource_metadata off
 
 #### Audience
 
-As a custom extension to the standard, resource metadata can be configured to include the expected token audience (
-`aud`) claim.
+As a custom extension to the standard,
+resource metadata can be configured to include the expected token audience (`aud`) claim.
 
 If enabled, the metadata response will contain an additional `audience` field containing the configured client ID of the
 OIDC provider configuration.
@@ -132,6 +106,65 @@ protected_resource_metadata {
     audience
 }
 ```
+
+### Authentication Methods
+
+This module uses a plugin architecture to allow different authentication methods to be configured under the Caddy plugin
+namespace `http.oidc.authenticator`.
+
+When a request requires authentication, authentication methods are tried in the order they are configured.
+The first authenticator to return a valid session from the request is used.
+An expired session is ignored, and the next authenticator is tried.
+
+The default configuration is shown below.
+
+```caddyfile
+authenticate bearer
+authenticate cookie {
+    # Inherits the default cookie configuration
+}
+authenticate none
+```
+
+The default authenticators are not used if any `authenticate` directive is configured.
+
+#### Bearer
+
+The `bearer` authenticator is used to authenticate requests using a JWT bearer token.
+The bearer JWT must be signed by the OIDC provider.
+
+#### Cookie
+
+The `cookie` authenticator is used to authenticate requests using a session cookie.
+A cookie authenticator must be configured to enable OAuth2 browser-based login via the Authorization Code Flow.
+
+| Option      | Description                                                                  |
+|-------------|------------------------------------------------------------------------------|
+| `name`      | The name of the cookie.                                                      |
+| `secret`    | The 32 or 64 byte secret key to encrypt session cookies                      |
+| `domain`    | (optional) The domain of the cookie.                                         |
+| `path`      | (optional) The path of the cookie.                                           |
+| `insecure`  | (optional) Disable secure cookies.                                           |
+| `same_site` | (optional) The samesite mode of the cookie. One of `lax`, `strict` or `none` |
+| `claims`    | (optional) Claims to copy into the session cookie.                           | 
+
+The default configuration is shown below.
+
+```caddyfile
+authenticate cookie {
+    name caddy
+    same_site lax
+    path /
+    secret {env.COOKIE_SECRET}
+}
+```
+
+#### None
+
+The `none` authenticator always passes authentication by returning an anonymous session.
+
+> [!NOTE]
+> A `none` authenticator should always be the last configured authenticator.
 
 ## Handler Directive
 
@@ -266,7 +299,7 @@ Multiple values for a single claim directive are treated as a logical OR. If no 
 the matcher only checks for the claim's existence.
 
 > [!NOTE]
-> Any claims must be configured in the `oidc` directive `claim` option.
+> Any claims used here must be configured in the `cookie` authenticator if used.
 
 ```caddyfile
 # Allow requests containing role = write
@@ -360,7 +393,7 @@ following [placeholder](https://caddyserver.com/docs/conventions#placeholders) v
 | `http.auth.user.id`        | The username extracted from the `username` option of the global directive              |
 | `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                           |
 | `http.auth.method`         | The authentication method of the request. One of `none`, `cookie` or `bearer`          |
-| `http.auth.user.claim.*`   | Set for each extracted claim from the `claim` option of the global directive           |
+| `http.auth.user.claim.*`   | Set for each claim provided by the matched authenticator                               |
 | `http.auth.rule`           | The named access policy rule that matched the request                                  |
 | `http.auth.result`         | The acccess rule evaluation result. One of `allow`, `implicit deny` or `explicit deny` |
 

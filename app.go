@@ -9,6 +9,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+	_ "github.com/relvacode/caddy-oidc/authenticator"
 )
 
 const moduleID = "oidc"

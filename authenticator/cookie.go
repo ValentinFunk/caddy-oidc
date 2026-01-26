@@ -30,7 +30,7 @@ const (
 	DefaultCookieName     = "caddy"
 	DefaultCookieSameSite = SameSiteLax
 	DefaultCookiePath     = "/"
-	DefaultCookieSecret = "{env.COOKIE_SECRET}"
+	DefaultCookieSecret   = "{env.COOKIE_SECRET}"
 )
 
 var (

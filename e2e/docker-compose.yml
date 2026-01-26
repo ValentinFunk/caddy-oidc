@@ -13,7 +13,7 @@ services:
     depends_on:
       - oidc-provider
     environment:
-      OIDC_SECRET_KEY: VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm
+      COOKIE_SECRET: VTQOz22ZZiyYNciwtDyckU1aJWQSCXnm
 
   test:
     build:

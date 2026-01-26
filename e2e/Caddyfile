@@ -7,11 +7,9 @@
     oidc example {
         issuer http://oidc-provider/example
         client_id xyz
-        secret_key {env.OIDC_SECRET_KEY}
         scope openid email
-        claim email
         username email
-        cookie {
+        authenticate cookie {
             insecure
         }
     }
