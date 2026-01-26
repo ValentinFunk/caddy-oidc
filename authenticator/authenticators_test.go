@@ -128,3 +128,52 @@ func TestAuthenticatorSet_AuthenticateRequest_HandlesExpired(t *testing.T) {
 	_, _, err := set.AuthenticateRequest(&pkgtest.TestOIDCConfiguration{}, r)
 	assert.ErrorIs(t, err, ErrNoAuthentication)
 }
+
+type testGetAuthenticateImpl1 struct {
+	Check string
+}
+
+func (testGetAuthenticateImpl1) Method() AuthMethod { return AuthMethodNone }
+func (testGetAuthenticateImpl1) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	return nil, nil
+}
+
+type testGetAuthenticateImpl2 struct {
+	Check string
+}
+
+func (testGetAuthenticateImpl2) Method() AuthMethod { return AuthMethodNone }
+func (testGetAuthenticateImpl2) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	return nil, nil
+}
+
+type testGetAuthenticateImpl3 struct {
+	Check string
+}
+
+func (testGetAuthenticateImpl3) Method() AuthMethod { return AuthMethodNone }
+func (testGetAuthenticateImpl3) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	return nil, nil
+}
+
+func TestGetAuthenticator(t *testing.T) {
+	t.Parallel()
+
+	var set = Set{
+		Authenticators: []RequestAuthenticator{
+			testGetAuthenticateImpl1{Check: "1"},
+			testGetAuthenticateImpl2{Check: "2"},
+		},
+	}
+
+	v, ok := GetAuthenticator[testGetAuthenticateImpl1](&set)
+	require.True(t, ok)
+	assert.Equal(t, testGetAuthenticateImpl1{Check: "1"}, v)
+
+	v2, ok := GetAuthenticator[testGetAuthenticateImpl2](&set)
+	require.True(t, ok)
+	assert.Equal(t, testGetAuthenticateImpl2{Check: "2"}, v2)
+
+	_, ok = GetAuthenticator[testGetAuthenticateImpl3](&set)
+	assert.False(t, ok)
+}

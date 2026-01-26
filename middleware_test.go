@@ -11,6 +11,7 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/relvacode/caddy-oidc/authenticator"
 	"github.com/relvacode/caddy-oidc/internal/pkgtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func (h *TestHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) error {
 	return nil
 }
 
-func TestOIDCMiddleware_ServeHTTP_WithoutAuth(t *testing.T) {
+func TestOIDCMiddleware_ServeHTTP_WithoutAuth_AuthorizationFlowSupported(t *testing.T) {
 	t.Parallel()
 
 	auth := &OIDCMiddleware{
@@ -65,6 +66,58 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth(t *testing.T) {
 	}
 }
 
+func TestOIDCMiddleware_ServeHTTP_WithoutAuth_BearerOnly(t *testing.T) {
+	t.Parallel()
+
+	auth := &OIDCMiddleware{
+		Provider: GenerateTestProvider(),
+	}
+
+	auth.Provider.Authenticators.Authenticators = []authenticator.RequestAuthenticator{
+		&authenticator.BearerAuthenticator{},
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Sec-Fetch-Dest", "document")
+
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.Equal(t, 0, h.calls)
+	assert.Error(t, err)
+
+	var he caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &he) {
+		assert.ErrorIs(t, he.Unwrap(), authenticator.ErrNoAuthentication)
+		assert.Equal(t, http.StatusUnauthorized, he.StatusCode)
+	}
+}
+
+func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
+	t.Parallel()
+
+	auth := &OIDCMiddleware{
+		Provider: GenerateTestProvider(),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	assert.Equal(t, 0, h.calls)
+
+	var ce caddyhttp.HandlerError
+	if assert.ErrorAs(t, err, &ce) {
+		assert.Equal(t, http.StatusUnauthorized, ce.StatusCode)
+	}
+
+	wwwAuthenticate := w.Header().Get("WWW-Authenticate")
+	assert.NotEmpty(t, wwwAuthenticate)
+	assert.Equal(t, `Bearer resource_metadata="http://example.com/.well-known/oauth-protected-resource", scope="openid profile email offline_access"`, wwwAuthenticate)
+}
+
 func TestOIDCMiddleware_ServeHTTP_BearerOK(t *testing.T) {
 	t.Parallel()
 
@@ -91,30 +144,6 @@ func TestOIDCMiddleware_ServeHTTP_BearerOK(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, 1, h.calls)
-}
-
-func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
-	t.Parallel()
-
-	auth := &OIDCMiddleware{
-		Provider: GenerateTestProvider(),
-	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	h := new(TestHandler)
-
-	err := auth.ServeHTTP(w, r, h)
-	assert.Equal(t, 0, h.calls)
-
-	var ce caddyhttp.HandlerError
-	if assert.ErrorAs(t, err, &ce) {
-		assert.Equal(t, http.StatusUnauthorized, ce.StatusCode)
-	}
-
-	wwwAuthenticate := w.Header().Get("WWW-Authenticate")
-	assert.NotEmpty(t, wwwAuthenticate)
-	assert.Equal(t, `Bearer resource_metadata="http://example.com/.well-known/oauth-protected-resource", scope="openid profile email offline_access"`, wwwAuthenticate)
 }
 
 func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_EmptyRuleset(t *testing.T) {
