@@ -2,7 +2,6 @@ package authenticator
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -93,12 +92,6 @@ func (au *BearerAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *htt
 
 	id, err := verifier.Verify(r.Context(), parts[1])
 	if err != nil {
-		// An expired token is treated as unauthenticated
-		var te *oidc.TokenExpiredError
-		if errors.As(err, &te) {
-			return nil, ErrNoAuthentication
-		}
-
 		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
 

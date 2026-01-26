@@ -63,17 +63,17 @@ func NewTestVerifier(clock func() time.Time) *oidc.IDTokenVerifier {
 }
 
 type TestOIDCConfiguration struct {
-	Clock         func() time.Time
+	clock         func() time.Time
 	Verifier      *oidc.IDTokenVerifier
 	UsernameClaim string
 }
 
 func (c *TestOIDCConfiguration) Now() time.Time {
-	if c.Clock == nil {
+	if c.clock == nil {
 		return time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
 
-	return c.Clock()
+	return c.clock()
 }
 
 func (c *TestOIDCConfiguration) GetVerifier(_ context.Context) (*oidc.IDTokenVerifier, error) {

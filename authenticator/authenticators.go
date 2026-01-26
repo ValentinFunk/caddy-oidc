@@ -131,15 +131,19 @@ func (set *Set) Validate() error {
 }
 
 // AuthenticateRequest attempts to authenticate the request using the configured authenticators.
-// It returns the first successful authentication method and session,
-// or AuthMethodNone and an anonymous Session with ErrNoAuthentication wrapped in a caddyhttp.Error if no authenticator succeeds.
+// It returns the first successful authentication method and session.
+//
+// Any ErrNoAuthentication or oidc.TokenExpiredError errors are ignored, and the next authenticator in sequence is tried.
+// If no authenticators succeed, then ErrNoAuthentication is returned.
 func (set *Set) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (AuthMethod, *session.Session, error) {
 	for _, authenticator := range set.Authenticators {
 		s, err := authenticator.AuthenticateRequest(cfg, r)
 		if err == nil {
 			return authenticator.Method(), s, nil
 		}
-		if !errors.Is(err, ErrNoAuthentication) {
+
+		var ee *oidc.TokenExpiredError
+		if !errors.Is(err, ErrNoAuthentication) && !errors.As(err, &ee) {
 			return AuthMethodNone, nil, err
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/relvacode/caddy-oidc/internal/pkgtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,5 +97,8 @@ func TestBearerAuthentication_AuthenticateRequest_BearerTokenExpired(t *testing.
 	r.Header.Set("Authorization", "Bearer "+pkgtest.GenerateTestJWTExpiresAt(cfg.Now().Add(-time.Hour)))
 
 	_, err := au.AuthenticateRequest(&cfg, r)
-	assert.ErrorIs(t, err, ErrNoAuthentication)
+	require.Error(t, err)
+
+	var ee *oidc.TokenExpiredError
+	assert.ErrorAs(t, err, &ee)
 }

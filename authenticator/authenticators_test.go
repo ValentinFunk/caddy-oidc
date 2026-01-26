@@ -10,6 +10,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/relvacode/caddy-oidc/internal/pkgtest"
 	"github.com/relvacode/caddy-oidc/session"
 	"github.com/stretchr/testify/assert"
@@ -101,4 +102,25 @@ func TestAuthenticatorSet_AuthenticateRequest_NoAuthentication(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, ce.StatusCode)
 		assert.ErrorIs(t, ce.Unwrap(), ErrNoAuthentication)
 	}
+}
+
+type SendExpiredError struct {
+}
+
+func (SendExpiredError) Method() AuthMethod { return AuthMethodNone }
+
+func (SendExpiredError) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	return nil, &oidc.TokenExpiredError{}
+}
+
+func TestAuthenticatorSet_AuthenticateRequest_HandlesExpired(t *testing.T) {
+	var set = &Set{
+		Authenticators: []RequestAuthenticator{
+			&SendExpiredError{},
+		},
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	_, _, err := set.AuthenticateRequest(&pkgtest.TestOIDCConfiguration{}, r)
+	assert.ErrorIs(t, err, ErrNoAuthentication)
 }
