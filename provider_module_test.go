@@ -1,7 +1,7 @@
 package caddy_oidc
 
 import (
-	"net/http"
+	"encoding/json"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -16,7 +16,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 		name      string
 		input     string
 		shouldErr bool
-		expect    *OIDCProviderModule
+		expect    string
 	}{
 		{
 			name: "full configuration",
@@ -24,41 +24,60 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 				issuer http://openid/example
 				client_id xyz
 				redirect_uri http://localhost/oauth/callback
-				secret_key 7DFSrbya1rvBBmcaxD
 				tls_insecure_skip_verify
 				scope openid email profile
 				username email
-				claim email role
-				cookie {
+				authenticate bearer
+				authenticate cookie {
 					name session_id
 					same_site strict
 					insecure
+					secret 7DFSrbya1rvBBmcaxD
+					claim email role
 				}
+				authenticate none
 				protected_resource_metadata {
 					audience
 				}
 			}`,
 			shouldErr: false,
-			expect: &OIDCProviderModule{
-				Issuer:                "http://openid/example",
-				ClientID:              "xyz",
-				RedirectURI:           "http://localhost/oauth/callback",
-				SecretKey:             "7DFSrbya1rvBBmcaxD",
-				TLSInsecureSkipVerify: true,
-				Scope:                 []string{"openid", "email", "profile"},
-				Username:              "email",
-				Claims:                []string{"email", "role"},
-				Cookie: &Cookies{
-					Name:     "session_id",
-					SameSite: sameSite{http.SameSiteStrictMode},
-					Insecure: true,
-					Path:     "/",
-				},
-				ProtectedResourceMetadata: &ProtectedResourceMetadataConfiguration{
-					Disable:  false,
-					Audience: true,
-				},
-			},
+			expect: `{
+  "issuer": "http://openid/example",
+  "client_id": "xyz",
+  "scope": [
+    "openid",
+    "email",
+    "profile"
+  ],
+  "redirect_uri": "http://localhost/oauth/callback",
+  "username": "email",
+  "authenticators": {
+    "authenticators": [
+      {
+        "authenticator": "bearer"
+      },
+      {
+        "name": "session_id",
+        "same_site": "strict",
+        "insecure": true,
+        "secret": "7DFSrbya1rvBBmcaxD",
+        "claims": [
+          "email",
+          "role"
+        ],
+        "authenticator": "cookie"
+      },
+      {
+        "authenticator": "none"
+      }
+    ]
+  },
+  "tls_insecure_skip_verify": true,
+  "protected_resource_metadata": {
+    "disable": false,
+    "audience": true
+  }
+}`,
 		},
 		{
 			name: "missing issuer_url argument",
@@ -101,7 +120,10 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.Equal(t, tt.expect, module)
+
+			jsonBytes, err := json.Marshal(module)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.expect, string(jsonBytes))
 		})
 	}
 }

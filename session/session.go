@@ -1,16 +1,14 @@
-package caddy_oidc
+package session
 
 import (
 	"encoding/json"
-	"net/http"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/gorilla/securecookie"
 )
 
-// AnonymousSession returns a session to use when a request is unauthenticated.
-func AnonymousSession() *Session {
+// Anonymous returns a session to use when a request is unauthenticated.
+func Anonymous() *Session {
 	return &Session{
 		Anonymous: true,
 		Claims:    json.RawMessage(`{}`),
@@ -25,22 +23,6 @@ type Session struct {
 	UID       string          `json:"u"`
 	ExpiresAt int64           `json:"e,omitempty"`
 	Claims    json.RawMessage `json:"c,omitempty"`
-}
-
-// HTTPCookie returns the http cookie representation of the cookies.
-func (s *Session) HTTPCookie(cookies *Cookies, encoder *securecookie.SecureCookie) (*http.Cookie, error) {
-	value, err := encoder.Encode(cookies.Name, s)
-	if err != nil {
-		return nil, err
-	}
-
-	httpCookie := cookies.New(value)
-
-	if s.ExpiresAt > 0 {
-		httpCookie.Expires = time.Unix(s.ExpiresAt, 0)
-	}
-
-	return httpCookie, nil
 }
 
 // Expires returns the expiration time of the session.

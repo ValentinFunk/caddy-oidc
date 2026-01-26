@@ -3,7 +3,7 @@
 
 // Built By: go install
 
-package caddy_oidc
+package authenticator
 
 import (
 	"errors"
