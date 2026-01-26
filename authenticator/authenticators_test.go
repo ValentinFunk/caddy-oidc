@@ -90,12 +90,14 @@ func TestAuthenticatorSet_AuthenticateRequest(t *testing.T) {
 func TestAuthenticatorSet_AuthenticateRequest_NoAuthentication(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	var authenticatorSet Set
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		set Set
+	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
-	_, _, err := authenticatorSet.AuthenticateRequest(&cfg, r)
+	_, _, err := set.AuthenticateRequest(&cfg, r)
 
 	var ce caddyhttp.HandlerError
 	if assert.ErrorAs(t, err, &ce) {
@@ -114,6 +116,8 @@ func (SendExpiredError) AuthenticateRequest(cfg OIDCConfiguration, r *http.Reque
 }
 
 func TestAuthenticatorSet_AuthenticateRequest_HandlesExpired(t *testing.T) {
+	t.Parallel()
+
 	var set = &Set{
 		Authenticators: []RequestAuthenticator{
 			&SendExpiredError{},

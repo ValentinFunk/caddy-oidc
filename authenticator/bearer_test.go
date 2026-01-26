@@ -15,8 +15,10 @@ import (
 func TestBearerAuthenticator_AuthenticateRequest(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	var au BearerAuthenticator
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  BearerAuthenticator
+	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer "+pkgtest.GenerateTestJWTExpiresAt(cfg.Now().Add(time.Hour)))
@@ -29,8 +31,10 @@ func TestBearerAuthenticator_AuthenticateRequest(t *testing.T) {
 func TestBearerAuthentication_AuthenticateRequest_WithoutBearerToken(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	var au BearerAuthenticator
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  BearerAuthenticator
+	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 
@@ -41,8 +45,10 @@ func TestBearerAuthentication_AuthenticateRequest_WithoutBearerToken(t *testing.
 func TestBearerAuthentication_AuthenticateRequest_InvalidBearerToken(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	var au BearerAuthenticator
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  BearerAuthenticator
+	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer xxxxx")
@@ -55,10 +61,12 @@ func TestBearerAuthentication_AuthenticateRequest_InvalidBearerToken(t *testing.
 func TestBearerAuthentication_AuthenticateRequest_EmailForUsernameClaim(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	cfg.UsernameClaim = "email"
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  BearerAuthenticator
+	)
 
-	var au BearerAuthenticator
+	cfg.UsernameClaim = "email"
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer "+pkgtest.GenerateTestJWTExpiresAt(cfg.Now().Add(time.Hour)))
@@ -71,10 +79,12 @@ func TestBearerAuthentication_AuthenticateRequest_EmailForUsernameClaim(t *testi
 func TestBearerAuthentication_AuthenticateRequest_MissingUsernameClaim(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	cfg.UsernameClaim = "not exist"
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  BearerAuthenticator
+	)
 
-	var au BearerAuthenticator
+	cfg.UsernameClaim = "not exist"
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer "+pkgtest.GenerateTestJWTExpiresAt(cfg.Now().Add(time.Hour)))
@@ -90,8 +100,10 @@ func TestBearerAuthentication_AuthenticateRequest_MissingUsernameClaim(t *testin
 func TestBearerAuthentication_AuthenticateRequest_BearerTokenExpired(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	var au BearerAuthenticator
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  BearerAuthenticator
+	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("Authorization", "Bearer "+pkgtest.GenerateTestJWTExpiresAt(cfg.Now().Add(-time.Hour)))

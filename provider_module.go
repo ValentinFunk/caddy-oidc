@@ -134,6 +134,7 @@ func (m *OIDCProviderModule) Provision(ctx caddy.Context) error {
 	if m.Scope == nil {
 		m.Scope = []string{oidc.ScopeOpenID}
 	}
+
 	if m.Username == "" {
 		m.Username = DefaultUsernameClaim
 	}

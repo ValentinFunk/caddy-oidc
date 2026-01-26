@@ -85,11 +85,13 @@ func TestSessionCookieAuthenticator_UnmarshalCaddyfile(t *testing.T) {
 func TestSessionCookieAuthenticator_AuthenticateRequest_WithCookie(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	au := &SessionCookieAuthenticator{
-		Name:   "test-cookie",
-		Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
-	}
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  = &SessionCookieAuthenticator{
+			Name:   "test-cookie",
+			Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
+		}
+	)
 
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
@@ -114,11 +116,13 @@ func TestSessionCookieAuthenticator_AuthenticateRequest_WithCookie(t *testing.T)
 func TestSessionCookieAuthenticator_AuthenticateRequest_WithCookieSignedByOther(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	au := &SessionCookieAuthenticator{
-		Name:   "test-cookie",
-		Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
-	}
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  = &SessionCookieAuthenticator{
+			Name:   "test-cookie",
+			Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
+		}
+	)
 
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
@@ -148,11 +152,13 @@ func TestSessionCookieAuthenticator_AuthenticateRequest_WithCookieSignedByOther(
 func TestSessionCookieAuthenticator_AuthenticateRequest_SessionExpired(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	au := &SessionCookieAuthenticator{
-		Name:   "test-cookie",
-		Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
-	}
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  = &SessionCookieAuthenticator{
+			Name:   "test-cookie",
+			Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
+		}
+	)
 
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()

@@ -13,8 +13,10 @@ import (
 func TestNoneAuthenticator_AuthenticateRequest(t *testing.T) {
 	t.Parallel()
 
-	var cfg pkgtest.TestOIDCConfiguration
-	au := &NoneAuthenticator{}
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		au  NoneAuthenticator
+	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 

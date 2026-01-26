@@ -9,11 +9,12 @@ import (
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
+//nolint:gochecknoglobals
 var testKey = []byte("secret-key-for-testing-purposes-only")
 
-type TestKeySet struct{}
+type testKeySet struct{}
 
-func (TestKeySet) VerifySignature(_ context.Context, token string) ([]byte, error) {
+func (testKeySet) VerifySignature(_ context.Context, token string) ([]byte, error) {
 	jws, err := jose.ParseSigned(token, []jose.SignatureAlgorithm{jose.HS256})
 	if err != nil {
 		return nil, err
@@ -22,20 +23,22 @@ func (TestKeySet) VerifySignature(_ context.Context, token string) ([]byte, erro
 	return jws.Verify(testKey)
 }
 
-type ExtendedClaims struct {
+type extendedClaims struct {
 	jwt.Claims
 
 	Email string   `json:"email"`
 	Roles []string `json:"roles,omitempty"`
 }
 
+// GenerateTestJWTExpiresAt generates a JWT with the given expiration time.
+// The generated JWT is signed with the testKey.
 func GenerateTestJWTExpiresAt(exp time.Time) string {
 	sig, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: testKey}, (&jose.SignerOptions{}).WithType("JWT"))
 	if err != nil {
 		panic(err)
 	}
 
-	claims := ExtendedClaims{
+	claims := extendedClaims{
 		Claims: jwt.Claims{
 			Subject:  "test",
 			Issuer:   "http://openid/example",
@@ -54,14 +57,16 @@ func GenerateTestJWTExpiresAt(exp time.Time) string {
 	return raw
 }
 
+// NewTestVerifier returns a new IDTokenVerifier that uses the testKey for signing.
 func NewTestVerifier(clock func() time.Time) *oidc.IDTokenVerifier {
-	return oidc.NewVerifier("http://openid/example", TestKeySet{}, &oidc.Config{
+	return oidc.NewVerifier("http://openid/example", testKeySet{}, &oidc.Config{
 		ClientID:             "xyz",
 		SupportedSigningAlgs: []string{"HS256"},
 		Now:                  clock,
 	})
 }
 
+// TestOIDCConfiguration is a test implementation of OIDCConfiguration.
 type TestOIDCConfiguration struct {
 	clock         func() time.Time
 	Verifier      *oidc.IDTokenVerifier
@@ -88,5 +93,6 @@ func (c *TestOIDCConfiguration) GetUsernameClaim() string {
 	if c.UsernameClaim == "" {
 		return "sub"
 	}
+
 	return c.UsernameClaim
 }

@@ -25,6 +25,8 @@ type AuthMethod string
 // ErrNoAuthentication is returned when no valid authentication could be found in the request.
 var ErrNoAuthentication = errors.New("no valid authentication credentials provided")
 
+// OIDCConfiguration represents the configuration required to authenticate incoming requests
+// using configuration from an OIDC provider.
 type OIDCConfiguration interface {
 	// Now returns the current time according to the OIDC configuration clock.
 	Now() time.Time
@@ -34,6 +36,7 @@ type OIDCConfiguration interface {
 	GetUsernameClaim() string
 }
 
+// A RequestAuthenticator extracts authentication information from an incoming request.
 type RequestAuthenticator interface {
 	// Method returns the authentication method type provided by this RequestAuthenticator
 	Method() AuthMethod
@@ -49,6 +52,7 @@ var (
 	_ caddy.Validator       = (*Set)(nil)
 )
 
+// Set contains an ordered list of RequestAuthenticator implementations.
 type Set struct {
 	AuthenticatorsRaw []json.RawMessage      `caddy:"namespace=http.oidc.authenticators inline_key=authenticator" json:"authenticators"`
 	Authenticators    []RequestAuthenticator `json:"-"`
@@ -110,7 +114,7 @@ func (set *Set) Provision(ctx caddy.Context) error {
 		return err
 	}
 
-	for _, mod := range modules.([]any) {
+	for _, mod := range modules.([]any) { //nolint:forcetypeassert
 		impl, ok := mod.(RequestAuthenticator)
 		if !ok {
 			return errors.New("loaded module is not a valid RequestAuthenticator implementation")
@@ -152,11 +156,13 @@ func (set *Set) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (Aut
 }
 
 // GetAuthenticator returns the first RequestAuthenticator in the set equal to the requested type.
+//
+//nolint:ireturn
 func GetAuthenticator[T RequestAuthenticator](set *Set) (T, bool) {
 	findType := reflect.TypeOf(*new(T))
 	for _, authenticator := range set.Authenticators {
 		if reflect.TypeOf(authenticator) == findType {
-			return authenticator.(T), true
+			return authenticator.(T), true //nolint:forcetypeassert
 		}
 	}
 

@@ -27,17 +27,18 @@ func init() {
 }
 
 const (
-	DefaultCookieName     = "caddy"
-	DefaultCookieSameSite = SameSiteLax
-	DefaultCookiePath     = "/"
-	DefaultCookieSecret   = "{env.COOKIE_SECRET}"
+	defaultCookieName     = "caddy"
+	defaultCookieSameSite = SameSiteLax
+	defaultCookiePath     = "/"
+	//nolint:gosec
+	defaultCookieSecret = "{env.COOKIE_SECRET}"
 )
 
-var (
-	// ErrNoIdToken is returned when an OAuth2 code exchange response does not contain an ID token.
-	ErrNoIdToken = errors.New("authentication server did not return an ID token")
-)
+// ErrNoIdToken is returned when an OAuth2 code exchange response does not contain an ID token.
+var ErrNoIdToken = errors.New("authentication server did not return an ID token")
 
+// OAuthAuthorizationFlowConfiguration represents the configuration required
+// to implement an OAuth2 Authorization Code Flow.
 type OAuthAuthorizationFlowConfiguration interface {
 	OIDCConfiguration
 
@@ -148,19 +149,22 @@ func (au *SessionCookieAuthenticator) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 
 func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 	repl := caddy.NewReplacer()
+
 	var err error
 
 	if au.Name == "" {
-		au.Name = DefaultCookieName
+		au.Name = defaultCookieName
 	}
+
 	au.Name, err = repl.ReplaceOrErr(au.Name, true, true)
 	if err != nil {
 		return err
 	}
 
 	if au.Path == "" {
-		au.Path = DefaultCookiePath
+		au.Path = defaultCookiePath
 	}
+
 	au.Path, err = repl.ReplaceOrErr(au.Path, false, true)
 	if err != nil {
 		return err
@@ -172,12 +176,13 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 	}
 
 	if au.SameSite == "" {
-		au.SameSite = DefaultCookieSameSite
+		au.SameSite = defaultCookieSameSite
 	}
 
 	if au.Secret == "" {
-		au.Secret = DefaultCookieSecret
+		au.Secret = defaultCookieSecret
 	}
+
 	au.Secret, err = repl.ReplaceOrErr(au.Secret, true, true)
 	if err != nil {
 		return err
@@ -276,7 +281,6 @@ func (au *SessionCookieAuthenticator) StartLogin(cfg OAuthAuthorizationFlowConfi
 		oauth2.S256ChallengeOption(pkceVerifier),
 		oauth2.SetAuthURLParam("redirect_uri", cfg.GetAbsRedirectUri(r)),
 	)
-
 	if err != nil {
 		return err
 	}
@@ -313,9 +317,13 @@ func (au *SessionCookieAuthenticator) handleCallbackParseCSRFCookie(rw http.Resp
 	return &csrfToken, nil
 }
 
-// handleCallbackOAuthCodeExchange performs the OAuth2 token exchange using the PKCE code Verifier.
+// handleCodeExchange performs the OAuth2 token exchange using the PKCE code Verifier.
 // It then verifies the ID token and returns the userinfo claims as well as the ID token expiry time.
-func (au *SessionCookieAuthenticator) handleCallbackOAuthCodeExchange(cfg OAuthAuthorizationFlowConfiguration, r *http.Request, pkceVerifier string) (*oidc.UserInfo, time.Time, error) {
+func (au *SessionCookieAuthenticator) handleCodeExchange(
+	cfg OAuthAuthorizationFlowConfiguration,
+	r *http.Request,
+	pkceVerifier string,
+) (*oidc.UserInfo, time.Time, error) {
 	response, err := cfg.Exchange(r.Context(), r.FormValue("code"),
 		oauth2.VerifierOption(pkceVerifier),
 		oauth2.SetAuthURLParam("redirect_uri", cfg.GetAbsRedirectUri(r)),
@@ -359,12 +367,13 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	}
 
 	// Exchange code for ID token
-	userInfo, idTokenExpires, err := au.handleCallbackOAuthCodeExchange(cfg, r, csrfToken.PKCEVerifier)
+	userInfo, idTokenExpires, err := au.handleCodeExchange(cfg, r, csrfToken.PKCEVerifier)
 	if err != nil {
 		return caddyhttp.Error(http.StatusBadRequest, err)
 	}
 
 	var jsonClaims *json.RawMessage
+
 	err = userInfo.Claims(&jsonClaims)
 	if err != nil {
 		return fmt.Errorf("failed to extract claims from user info: %w", err)
@@ -406,5 +415,6 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	}
 
 	http.Redirect(rw, r, redirectUri, http.StatusFound)
+
 	return nil
 }

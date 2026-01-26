@@ -37,6 +37,8 @@ linters:
         - d *caddyfile.Dispenser
         - w *httptest.ResponseRecorder
         - u *url.URL
+        - s *session.Session
+        - s session.Session
     tagliatelle:
       case:
         rules:

@@ -58,7 +58,7 @@ func GenerateTestProvider() *Provider {
 		panic(err)
 	}
 
-	pr := &Provider{
+	provider := &Provider{
 		Clock: func() time.Time {
 			return time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 		},
@@ -78,14 +78,14 @@ func GenerateTestProvider() *Provider {
 		Issuer:            "https://openid/example",
 	}
 
-	pr.Discovery = Defer[*providerDiscoveryConfiguration](func() (*providerDiscoveryConfiguration, error) {
+	provider.Discovery = Defer[*providerDiscoveryConfiguration](func() (*providerDiscoveryConfiguration, error) {
 		return &providerDiscoveryConfiguration{
-			Verifier: pkgtest.NewTestVerifier(pr.Clock),
+			Verifier: pkgtest.NewTestVerifier(provider.Clock),
 			OAuth2:   testOAuthClientImpl{},
 		}, nil
 	})
 
-	return pr
+	return provider
 }
 
 func TestProvider_ProtectedResourceMetadata(t *testing.T) {
