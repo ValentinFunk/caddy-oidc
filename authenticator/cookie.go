@@ -30,6 +30,7 @@ const (
 	DefaultCookieName     = "caddy"
 	DefaultCookieSameSite = SameSiteLax
 	DefaultCookiePath     = "/"
+	DefaultCookieSecret = "{env.COOKIE_SECRET}"
 )
 
 var (
@@ -149,22 +150,20 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 	repl := caddy.NewReplacer()
 	var err error
 
-	au.Name, err = repl.ReplaceOrErr(au.Name, false, true)
-	if err != nil {
-		return err
-	}
-
 	if au.Name == "" {
 		au.Name = DefaultCookieName
 	}
-
-	au.Path, err = repl.ReplaceOrErr(au.Path, false, true)
+	au.Name, err = repl.ReplaceOrErr(au.Name, true, true)
 	if err != nil {
 		return err
 	}
 
 	if au.Path == "" {
 		au.Path = DefaultCookiePath
+	}
+	au.Path, err = repl.ReplaceOrErr(au.Path, false, true)
+	if err != nil {
+		return err
 	}
 
 	au.Domain, err = repl.ReplaceOrErr(au.Domain, false, true)
@@ -176,7 +175,10 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 		au.SameSite = DefaultCookieSameSite
 	}
 
-	au.Secret, err = repl.ReplaceOrErr(au.Secret, false, true)
+	if au.Secret == "" {
+		au.Secret = DefaultCookieSecret
+	}
+	au.Secret, err = repl.ReplaceOrErr(au.Secret, true, true)
 	if err != nil {
 		return err
 	}
