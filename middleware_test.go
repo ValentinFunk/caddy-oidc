@@ -1,12 +1,15 @@
 package caddy_oidc
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +31,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth(t *testing.T) {
 	t.Parallel()
 
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+		au: Defer(func() (*Provider, error) { return GenerateTestProvider(), nil }),
 	}
 
 	w := httptest.NewRecorder()
@@ -65,7 +68,7 @@ func TestOIDCMiddleware_ServeHTTP_MalformedJWT(t *testing.T) {
 	t.Parallel()
 
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+		au: Defer(func() (*Provider, error) { return GenerateTestProvider(), nil }),
 	}
 
 	w := httptest.NewRecorder()
@@ -83,21 +86,52 @@ func TestOIDCMiddleware_ServeHTTP_MalformedJWT(t *testing.T) {
 	}
 }
 
-func TestOIDCMiddleware_ServeHTTP_WithMissingUsernameClaim(t *testing.T) {
+func TestOIDCMiddleware_ServeHTTP_BearerOK(t *testing.T) {
 	t.Parallel()
+	pr := GenerateTestProvider()
 
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) {
-			au := GenerateTestAuthenticator()
-			au.uid = "invalid_claim"
-
-			return au, nil
+		Policies: Ruleset{
+			{
+				Action: ActionAllow,
+				Matchers: caddyhttp.MatcherSet{
+					&MatchUser{Usernames: []string{"*"}},
+				},
+			},
+		},
+		au: Defer(func() (*Provider, error) {
+			return pr, nil
 		}),
 	}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
+	r = r.WithContext(context.WithValue(r.Context(), caddy.ReplacerCtxKey, caddy.NewReplacer()))
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTExpiresAt(pr.clock().Add(time.Hour)))
+
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 1, h.calls)
+}
+
+func TestOIDCMiddleware_ServeHTTP_WithMissingUsernameClaim(t *testing.T) {
+	t.Parallel()
+
+	pr := GenerateTestProvider()
+	pr.uid = "invalid_claim"
+
+	auth := &OIDCMiddleware{
+		au: Defer(func() (*Provider, error) {
+			return pr, nil
+		}),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTExpiresAt(pr.clock().Add(time.Hour)))
 
 	h := new(TestHandler)
 
@@ -113,7 +147,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
 	t.Parallel()
 
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+		au: Defer(func() (*Provider, error) { return GenerateTestProvider(), nil }),
 	}
 
 	w := httptest.NewRecorder()
@@ -136,13 +170,14 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_NoRedirectSupport(t *testing.T) {
 func TestOIDCMiddleware_ServeHTTP_WithBearerAuthentication_EmptyRuleset(t *testing.T) {
 	t.Parallel()
 
+	pr := GenerateTestProvider()
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) { return GenerateTestAuthenticator(), nil }),
+		au: Defer(func() (*Provider, error) { return pr, nil }),
 	}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTExpiresAt(pr.clock().Add(time.Hour)))
 
 	h := new(TestHandler)
 
@@ -154,8 +189,8 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource(t *testing.T) 
 	t.Parallel()
 
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) {
-			pr := GenerateTestAuthenticator()
+		au: Defer(func() (*Provider, error) {
+			pr := GenerateTestProvider()
 			pr.protectedResource.Audience = true
 
 			return pr, nil
@@ -194,8 +229,8 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *te
 	t.Parallel()
 
 	auth := &OIDCMiddleware{
-		au: Defer(func() (*Authenticator, error) {
-			pr := GenerateTestAuthenticator()
+		au: Defer(func() (*Provider, error) {
+			pr := GenerateTestProvider()
 			pr.protectedResource.Disable = true
 
 			return pr, nil
@@ -218,6 +253,9 @@ func TestOIDCMiddleware_ServeHTTP_WellKnownOAuthProtectedResource_Disabled(t *te
 func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 	t.Parallel()
 
+	pr := GenerateTestProvider()
+	pr.claims = append(pr.claims, "aud", "roles")
+
 	auth := &OIDCMiddleware{
 		Policies: Ruleset{
 			{
@@ -228,17 +266,14 @@ func TestOIDCMiddleware_ServeHTTP_SetsReplacerVars(t *testing.T) {
 				},
 			},
 		},
-		au: Defer(func() (*Authenticator, error) {
-			pr := GenerateTestAuthenticator()
-			pr.claims = append(pr.claims, "aud", "roles")
-
+		au: Defer(func() (*Provider, error) {
 			return pr, nil
 		}),
 	}
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+GenerateTestJWT())
+	r.Header.Set("Authorization", "Bearer "+GenerateTestJWTExpiresAt(pr.clock().Add(time.Hour)))
 
 	repl := caddyhttp.NewTestReplacer(r)
 

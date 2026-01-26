@@ -80,7 +80,7 @@ var _ caddy.Provisioner = (*App)(nil)
 // App holds configuration for all the named OIDC providers within a Caddy configuration.
 type App struct {
 	Providers map[string]*OIDCProviderModule `json:"providers,omitempty"`
-	provided  map[string]*DeferredResult[*Authenticator]
+	provided  map[string]*DeferredResult[*Provider]
 }
 
 func (*App) CaddyModule() caddy.ModuleInfo {
@@ -94,7 +94,7 @@ func (*App) Start() error { return nil }
 func (*App) Stop() error  { return nil }
 
 func (a *App) Provision(ctx caddy.Context) error {
-	a.provided = make(map[string]*DeferredResult[*Authenticator], len(a.Providers))
+	a.provided = make(map[string]*DeferredResult[*Provider], len(a.Providers))
 
 	for providerName := range a.Providers {
 		var provider = a.Providers[providerName]
@@ -106,7 +106,7 @@ func (a *App) Provision(ctx caddy.Context) error {
 
 		// Built authenticator configuration is deferred as we don't want to block provision during OIDC discovery.
 		// Doing so might mean discovery isn't even possible until Caddy fully initializes if the IDP is proxied by Caddy as well.
-		a.provided[providerName] = Defer(func() (*Authenticator, error) {
+		a.provided[providerName] = Defer(func() (*Provider, error) {
 			return provider.Create(ctx)
 		})
 	}

@@ -10,8 +10,8 @@ import (
 )
 
 // AnonymousSession returns a session to use when a request is unauthenticated.
-func AnonymousSession() Session {
-	return Session{
+func AnonymousSession() *Session {
+	return &Session{
 		Anonymous: true,
 		Claims:    json.RawMessage(`{}`),
 	}

@@ -2,271 +2,339 @@ package caddy_oidc
 
 import (
 	"context"
-	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/google/uuid"
 	"github.com/gorilla/securecookie"
-	"github.com/hashicorp/go-retryablehttp"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
-	"go.uber.org/zap/exp/zapslog"
 	"golang.org/x/oauth2"
 )
 
-func init() {
-	caddy.RegisterModule(new(OIDCProviderModule))
-}
-
-const (
-	// DefaultRedirectUriPath is the default redirect URI used for OAuth callback if none is specified.
-	DefaultRedirectUriPath = "/oauth2/callback"
-	// DefaultUsernameClaim is the default username claim to use if none is specified.
-	DefaultUsernameClaim = "sub"
+var (
+	// ErrNoIdToken is returned when an OAuth2 code exchange response does not contain an ID token.
+	ErrNoIdToken = errors.New("authentication server did not return an ID token")
 )
 
-var _ caddy.Module = (*OIDCProviderModule)(nil)
-var _ caddy.Provisioner = (*OIDCProviderModule)(nil)
-var _ caddy.Validator = (*OIDCProviderModule)(nil)
-var _ caddyfile.Unmarshaler = (*OIDCProviderModule)(nil)
-
-// OIDCProviderModule holds the configuration for an OIDC provider.
-type OIDCProviderModule struct {
-	Issuer                    string                                  `json:"issuer"`
-	ClientID                  string                                  `json:"client_id"`
-	SecretKey                 string                                  `json:"secret_key"`
-	RedirectURI               string                                  `json:"redirect_uri,omitempty"`
-	TLSInsecureSkipVerify     bool                                    `json:"tls_insecure_skip_verify,omitempty"`
-	Cookie                    *Cookies                                `json:"cookie,omitempty"`
-	ProtectedResourceMetadata *ProtectedResourceMetadataConfiguration `json:"protected_resource_metadata,omitempty"`
-	Scope                     []string                                `json:"scope,omitempty"`
-	Username                  string                                  `json:"username,omitempty"`
-	Claims                    []string                                `json:"claims,omitempty"`
+// MissingRequiredClaimError is returned when a required claim is not provided.
+type MissingRequiredClaimError struct {
+	Claim string
 }
 
-func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  moduleID + ".provider",
-		New: func() caddy.Module { return new(OIDCProviderModule) },
-	}
+func (e MissingRequiredClaimError) Error() string {
+	return fmt.Sprintf("request authentication is missing the required claim '%s'", e.Claim)
 }
 
-// UnmarshalCaddyfile sets up the OIDCProviderModule instance from Caddyfile tokens.
-/*
-	{
-		issuer <issuer>
-		client_id <client_id>
-		redirect_uri [<redirect_uri>]
-		secret_key <secret_key>
-		tls_insecure_skip_verify
-		discovery_url <discovery_url>
-		scope [<scope>...]
-		username <username>
-		claim [<claim>...]
-		protected_resource <protected_resource>
-		cookie <cookie>
+// CSRFToken is the CSRF cookie payload when perform an OAuth2 Authorization Flow.
+type CSRFToken struct {
+	PKCEVerifier string `json:"v"`
+	RedirectURI  string `json:"r"`
+}
+
+// oauth2Client is an interface for the oauth2 client.
+type oauth2Client interface {
+	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
+	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	Scopes() []string
+	ClientID() string
+}
+
+// oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange.
+type oauth2ConfigWithHTTPClient struct {
+	*oauth2.Config
+
+	httpClient *http.Client
+}
+
+func (c *oauth2ConfigWithHTTPClient) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
+
+	return c.Config.Exchange(ctx, code, opts...)
+}
+
+func (c *oauth2ConfigWithHTTPClient) Scopes() []string {
+	return c.Config.Scopes
+}
+
+func (c *oauth2ConfigWithHTTPClient) ClientID() string {
+	return c.Config.ClientID
+}
+
+type userInfoClient interface {
+	UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*oidc.UserInfo, error)
+}
+
+// A ClaimsDecoder is a type that can decode arbitrary claims into a value using JSON.
+// The value might be a json.RawMessage.
+type ClaimsDecoder interface {
+	Claims(v any) error
+}
+
+// Provider holds the built configuration for an OIDC provider and authentication logic.
+type Provider struct {
+	log               *zap.Logger
+	redirectUri       *url.URL
+	clock             func() time.Time
+	issuer            string
+	authenticators    AuthenticatorSet
+	protectedResource *ProtectedResourceMetadataConfiguration
+	verifier          *oidc.IDTokenVerifier
+	uid               string
+	claims            []string
+	userInfo          userInfoClient
+	oauth2            oauth2Client
+	cookie            *Cookies
+	cookies           *securecookie.SecureCookie
+}
+
+// SessionFromClaims extracts a session from claims contained within the given ClaimsDecoder.
+func (pr *Provider) SessionFromClaims(claims ClaimsDecoder) (*Session, error) {
+	// A bit of a hack to extract the original claims from the decoder
+	var rawClaims *json.RawMessage
+
+	err := claims.Claims(&rawClaims)
+	if err != nil {
+		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
-*/
-func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
-		switch d.Val() {
-		case "issuer":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
 
-			m.Issuer = d.Val()
-		case "client_id":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
+	uid := gjson.GetBytes(*rawClaims, pr.uid)
+	if !uid.Exists() || uid.Type != gjson.String {
+		return nil, caddyhttp.Error(http.StatusUnauthorized, MissingRequiredClaimError{Claim: pr.uid})
+	}
 
-			m.ClientID = d.Val()
-		case "redirect_uri":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
+	session := &Session{
+		UID:    uid.String(),
+		Claims: json.RawMessage(`{}`),
+	}
 
-			m.RedirectURI = d.Val()
-		case "secret_key":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.SecretKey = d.Val()
-		case "cookie":
-			m.Cookie = new(Cookies)
-			*m.Cookie = DefaultCookieOptions() // Apply defaults
-
-			d.Prev()
-
-			err := m.Cookie.UnmarshalCaddyfile(d)
-			if err != nil {
-				return err
-			}
-		case "protected_resource_metadata":
-			m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
-
-			d.Prev()
-
-			err := m.ProtectedResourceMetadata.UnmarshalCaddyfile(d)
-			if err != nil {
-				return err
-			}
-		case "tls_insecure_skip_verify":
-			m.TLSInsecureSkipVerify = true
-		case "scope":
-			m.Scope = append(m.Scope, d.RemainingArgs()...)
-		case "username":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.Username = d.Val()
-		case "claim":
-			m.Claims = append(m.Claims, d.RemainingArgs()...)
-		default:
-			return d.Errf("unrecognized oidc subdirective '%s'", d.Val())
+	// Extract expiration time from claims
+	exp := gjson.GetBytes(*rawClaims, "exp")
+	if exp.Exists() && exp.Type == gjson.Number {
+		if expUnix := exp.Int(); expUnix > 0 {
+			session.ExpiresAt = expUnix
 		}
 	}
 
-	return nil
+	// Extract claims we want to store in the session cookie
+	extract := gjson.GetManyBytes(*rawClaims, pr.claims...)
+	for i, claim := range extract {
+		if claim.Exists() {
+			session.Claims, err = sjson.SetRawBytes(session.Claims, pr.claims[i], []byte(claim.Raw))
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return session, nil
 }
 
-func (m *OIDCProviderModule) Provision(_ caddy.Context) error {
-	var repl = caddy.NewReplacer()
-
-	m.SecretKey = repl.ReplaceAll(m.SecretKey, "")
-
-	if m.Cookie == nil {
-		m.Cookie = new(Cookies)
-		*m.Cookie = DefaultCookieOptions()
+// GetAbsRedirectUri returns the absolute redirect URI, resolving it relative to the request URL if necessary.
+func (pr *Provider) GetAbsRedirectUri(r *http.Request) string {
+	if pr.redirectUri.IsAbs() {
+		return pr.redirectUri.String()
 	}
 
-	if m.ProtectedResourceMetadata == nil {
-		m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
+	// Caddy should be sanitising X-Forwarded-Proto headers
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
 	}
 
-	if m.Scope == nil {
-		m.Scope = []string{oidc.ScopeOpenID}
-	}
+	var u = *r.URL
 
-	if m.Username == "" {
-		m.Username = DefaultUsernameClaim
-	}
+	u.Scheme = scheme
+	u.Host = r.Host
 
-	if m.RedirectURI == "" {
-		m.RedirectURI = DefaultRedirectUriPath
-	}
-
-	return nil
+	return u.ResolveReference(pr.redirectUri).String()
 }
 
-func (m *OIDCProviderModule) Validate() error {
-	if m.Issuer == "" {
-		return errors.New("issuer cannot be empty")
-	}
+// StartLogin starts the authorization flow by setting the state cookie and redirecting to the authorization endpoint.
+// The state cookie is in the format of `<cookie_name>|<state>`, with the value containing the PKCE code verifier.
+// The OAuth2 redirect URI is set to the configured redirect URI made absolute relative to the request URL.
+func (pr *Provider) StartLogin(rw http.ResponseWriter, r *http.Request) error {
+	var (
+		state             = uuid.New().String()
+		pkceVerifier      = oauth2.GenerateVerifier()
+		csrfCookieName    = fmt.Sprintf("%s|%s", pr.cookie.Name, state)
+		csrfCookiePayload = &CSRFToken{PKCEVerifier: pkceVerifier, RedirectURI: r.RequestURI}
+	)
 
-	if m.ClientID == "" {
-		return errors.New("client_id cannot be empty")
-	}
-
-	if m.SecretKey == "" {
-		return errors.New("secret_key cannot be empty")
-	}
-
-	if len(m.SecretKey) != 32 && len(m.SecretKey) != 64 {
-		return errors.New("secret_key must be 32 or 64 bytes")
-	}
-
-	if m.Username == "" {
-		return errors.New("username cannot be empty")
-	}
-
-	err := m.Cookie.Validate()
+	csrfCookieValue, err := pr.cookies.Encode(csrfCookieName, csrfCookiePayload)
 	if err != nil {
 		return err
 	}
 
+	csrfCookie := pr.cookie.New(csrfCookieValue)
+	csrfCookie.Name = csrfCookieName
+	csrfCookie.MaxAge = 900 // 15-minute short expiry time for the CSRF cookie
+
+	http.SetCookie(rw, csrfCookie)
+
+	authCodeUrl := pr.oauth2.AuthCodeURL(state,
+		oauth2.S256ChallengeOption(pkceVerifier),
+		oauth2.SetAuthURLParam("redirect_uri", pr.GetAbsRedirectUri(r)),
+	)
+
+	http.Redirect(rw, r, authCodeUrl, http.StatusFound)
+
 	return nil
 }
 
-// setupHTTPClient creates a new HTTP client from provider configuration for communicating with the OIDC provider.
-func (m *OIDCProviderModule) setupHTTPClient(log *zap.Logger) *http.Client {
-	retryClient := retryablehttp.NewClient()
-	retryClient.Logger = slog.New(zapslog.NewHandler(log.Core(), zapslog.WithName(log.Name()), zapslog.WithCaller(false)))
-	retryClient.RetryMax = 5
+// handleCallbackParseCSRFCookie parses the CSRF cookie from the request and returns the CSRF token payload.
+// If any CSRF cookie is found, then a Set-Cookie is sent to remove the cookie from the client.
+func (pr *Provider) handleCallbackParseCSRFCookie(rw http.ResponseWriter, r *http.Request) (*CSRFToken, error) {
+	var csrfCookieName = fmt.Sprintf("%s|%s", pr.cookie.Name, r.FormValue("state"))
 
-	// Copy the default settings from HTTP DefaultTransport
-	//nolint:forcetypeassert
-	retryClientTransport := http.DefaultTransport.(*http.Transport).Clone()
-	if m.TLSInsecureSkipVerify {
-		if retryClientTransport.TLSClientConfig == nil {
-			retryClientTransport.TLSClientConfig = new(tls.Config)
-		}
-
-		retryClientTransport.TLSClientConfig.InsecureSkipVerify = true
+	csrfCookie, err := r.Cookie(csrfCookieName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSRF cookie: %w", err)
 	}
 
-	retryClient.HTTPClient = &http.Client{
-		Transport: retryClientTransport,
+	// Delete CSRF cookie
+	deleteCsrfCookie := pr.cookie.New("")
+	deleteCsrfCookie.Name = csrfCookieName
+	deleteCsrfCookie.MaxAge = -1
+
+	http.SetCookie(rw, deleteCsrfCookie)
+
+	var csrfToken CSRFToken
+
+	err = pr.cookies.Decode(csrfCookieName, csrfCookie.Value, &csrfToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSRF cookie: %w", err)
 	}
 
-	return retryClient.StandardClient()
+	return &csrfToken, nil
 }
 
-// Create creates an Authenticator instance from this provider configuration.
-func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
-	redirectUri, err := url.Parse(m.RedirectURI)
+// handleCallbackOAuthCodeExchange performs the OAuth2 token exchange using the PKCE code verifier.
+// It then verifies the ID token and returns the userinfo claims as well as the ID token expiry time.
+func (pr *Provider) handleCallbackOAuthCodeExchange(r *http.Request, pkceVerifier string) (*oidc.UserInfo, time.Time, error) {
+	response, err := pr.oauth2.Exchange(r.Context(), r.FormValue("code"),
+		oauth2.VerifierOption(pkceVerifier),
+		oauth2.SetAuthURLParam("redirect_uri", pr.GetAbsRedirectUri(r)),
+	)
 	if err != nil {
-		return nil, fmt.Errorf("invalid redirect_uri: %w", err)
+		return nil, time.Time{}, fmt.Errorf("failed to exchange token: %w", err)
+	}
+
+	idTokenPlain, ok := response.Extra("id_token").(string)
+	if !ok {
+		return nil, time.Time{}, ErrNoIdToken
+	}
+
+	_, err = pr.verifier.Verify(r.Context(), idTokenPlain)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("failed to verify id_token: %w", err)
+	}
+
+	userInfo, err := pr.userInfo.UserInfo(r.Context(), oauth2.StaticTokenSource(response))
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("failed to fetch userinfo: %w", err)
+	}
+
+	return userInfo, response.Expiry, nil
+}
+
+// HandleCallback handles the callback from the authorization endpoint.
+func (pr *Provider) HandleCallback(rw http.ResponseWriter, r *http.Request) error {
+	if errValue := r.FormValue("error"); errValue != "" {
+		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("error: %s, description: %s", errValue, r.FormValue("error_description")))
+	}
+
+	csrfToken, err := pr.handleCallbackParseCSRFCookie(rw, r)
+	if err != nil {
+		return caddyhttp.Error(http.StatusBadRequest, err)
+	}
+
+	// Exchange code for ID token
+	userInfo, idTokenExpires, err := pr.handleCallbackOAuthCodeExchange(r, csrfToken.PKCEVerifier)
+	if err != nil {
+		return caddyhttp.Error(http.StatusBadRequest, err)
+	}
+
+	// Generate the session cookie and set it
+	session, err := pr.SessionFromClaims(userInfo)
+	if err != nil {
+		return fmt.Errorf("failed to extract session from user info: %w", err)
+	}
+
+	// Ensure the expiry information is taken from the ID token
+	session.ExpiresAt = idTokenExpires.Unix()
+
+	sessionCookie, err := session.HTTPCookie(pr.cookie, pr.cookies)
+	if err != nil {
+		return caddyhttp.Error(http.StatusBadRequest, fmt.Errorf("failed to create session cookie: %w", err))
+	}
+
+	http.SetCookie(rw, sessionCookie)
+
+	// Redirect to the configured redirect URI
+	var redirectUri = csrfToken.RedirectURI
+	if redirectUri == "" {
+		redirectUri = "/" // Fall back to root
+	}
+
+	http.Redirect(rw, r, redirectUri, http.StatusFound)
+
+	return nil
+}
+
+// ProtectedResourceMetadata returns the OAuth protected resource metadata for this authenticator.
+// If protected resource metadata is not enabled, then false is returned.
+func (pr *Provider) ProtectedResourceMetadata(r *http.Request) (*OAuthProtectedResource, bool) {
+	if pr.protectedResource.Disable {
+		return nil, false
 	}
 
 	var (
-		log        = ctx.Logger(m)
-		httpClient = m.setupHTTPClient(log)
-		authorizer = &Authenticator{
-			log:               log,
-			redirectUri:       redirectUri,
-			uid:               m.Username,
-			claims:            m.Claims,
-			clock:             time.Now,
-			cookies:           securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
-			cookie:            m.Cookie,
-			protectedResource: m.ProtectedResourceMetadata,
-			issuer:            m.Issuer,
+		ru       = RequestURL(r)
+		metadata = &OAuthProtectedResource{
+			Resource:        fmt.Sprintf("%s://%s", ru.Scheme, ru.Host),
+			ScopesSupported: pr.oauth2.Scopes(),
+			AuthorizationServers: []string{
+				pr.issuer,
+			},
+			// OIDC middleware only supports bearer authentication via the Authorization header
+			BearerMethodsSupported: []string{
+				"header",
+			},
 		}
 	)
 
-	providerCtx := context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-
-	provider, err := oidc.NewProvider(providerCtx, m.Issuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidc discovery failed: %w", err)
+	if pr.protectedResource.Audience {
+		metadata.Audience = pr.oauth2.ClientID()
 	}
 
-	authorizer.log.Debug("OIDC provider discovery successful", zap.Any("discovery", provider.Endpoint()))
+	return metadata, true
+}
 
-	authorizer.verifier = provider.Verifier(&oidc.Config{
-		ClientID: m.ClientID,
-		Now:      authorizer.clock,
-	})
+// WellKnownOAuthProtectedResourcePath is the path for the OAuth protected resource metadata endpoint.
+const WellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource"
 
-	authorizer.userInfo = provider
-	authorizer.oauth2 = &oauth2ConfigWithHTTPClient{
-		httpClient: httpClient,
-		Config: &oauth2.Config{
-			ClientID: m.ClientID,
-			Endpoint: provider.Endpoint(),
-			Scopes:   m.Scope,
-		},
+// ServeHTTPOAuthProtectedResource returns the OAuth protected resource metadata for the endpoint
+// .well-known/oauth-protected-resource.
+// If the endpoint is disabled, then a 404 not found response is returned.
+func (pr *Provider) ServeHTTPOAuthProtectedResource(rw http.ResponseWriter, r *http.Request) error {
+	metadata, ok := pr.ProtectedResourceMetadata(r)
+	if !ok {
+		return caddyhttp.Error(http.StatusNotFound, errors.New("protected resource metadata is disabled"))
 	}
 
-	return authorizer, nil
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusOK)
+
+	enc := json.NewEncoder(rw)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(metadata)
 }

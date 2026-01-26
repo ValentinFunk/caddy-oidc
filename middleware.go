@@ -44,7 +44,7 @@ type OIDCMiddleware struct {
 	Provider string  `json:"provider"`
 	Policies Ruleset `json:"policies"`
 
-	au *DeferredResult[*Authenticator]
+	au *DeferredResult[*Provider]
 }
 
 func (mw *OIDCMiddleware) CaddyModule() caddy.ModuleInfo {
@@ -159,7 +159,7 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		return true, au.ServeHTTPOAuthProtectedResource(rw, r)
 	}
 
-	authMethod, session, err := au.Authenticate(r)
+	authMethod, session, err := au.authenticators.AuthenticateRequest(au, r)
 	if err != nil {
 		return false, err
 	}
