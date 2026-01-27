@@ -186,6 +186,18 @@ The `header` authenticator authenticates a JWT token passed via an incoming HTTP
 authenticate header X-Api-Key
 ```
 
+#### Query
+
+The `query` authenticator authenticates a JWT token passed via an incoming HTTP request query parameter.
+
+> [!CAUTION]
+> There are several security implications to using query parameters for authentication.
+> See [RFC6750](https://datatracker.ietf.org/doc/html/rfc6750#section-2.3) for more information.
+
+```caddyfile
+authenticate query access_token
+```
+
 ## Handler Directive
 
 The handler directive is placed on routes to provide authentication and authorization for that route.

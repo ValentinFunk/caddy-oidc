@@ -25,6 +25,7 @@ func TestAuthenticatorSet_UnmarshalCaddyfile(t *testing.T) {
 		authenticate none
 		authenticate header X-Api-Key
 		authenticate header X-Access-Token
+		authenticate query api-key
 	`)
 
 	var authenticatorSet Set
@@ -39,6 +40,7 @@ func TestAuthenticatorSet_UnmarshalCaddyfile(t *testing.T) {
 		json.RawMessage(`{"authenticator":"none"}`),
 		json.RawMessage(`{"header":"X-Api-Key","authenticator":"header"}`),
 		json.RawMessage(`{"header":"X-Access-Token","authenticator":"header"}`),
+		json.RawMessage(`{"query":"api-key","authenticator":"query"}`),
 	}, authenticatorSet.AuthenticatorsRaw)
 }
 

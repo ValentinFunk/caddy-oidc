@@ -19,6 +19,8 @@ const (
 	AuthMethodCookie AuthMethod = "cookie"
 	// AuthMethodHeader is a AuthMethod of type header.
 	AuthMethodHeader AuthMethod = "header"
+	// AuthMethodQuery is a AuthMethod of type query.
+	AuthMethodQuery AuthMethod = "query"
 )
 
 var ErrInvalidAuthMethod = errors.New("not a valid AuthMethod")
@@ -40,6 +42,7 @@ var _AuthMethodValue = map[string]AuthMethod{
 	"bearer": AuthMethodBearer,
 	"cookie": AuthMethodCookie,
 	"header": AuthMethodHeader,
+	"query":  AuthMethodQuery,
 }
 
 // ParseAuthMethod attempts to convert a string to a AuthMethod.
