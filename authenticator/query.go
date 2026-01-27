@@ -71,3 +71,10 @@ func (au *QueryAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *http
 
 	return session.NewFromClaims(cfg.GetUsernameClaim(), id)
 }
+
+func (au *QueryAuthenticator) StripRequest(r *http.Request) {
+	q := r.URL.Query()
+	q.Del(au.Query)
+
+	r.URL.RawQuery = q.Encode()
+}

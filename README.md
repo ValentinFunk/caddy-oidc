@@ -67,46 +67,9 @@ example.com {
 | `scope`                       | (optional) The scope to request from the OIDC provider. The `openid` scope is required for browser-based login to work. | `openid` |
 | `username`                    | (optional) The claim to use as the username. Defaults to `sub`.                                                         | `sub`    |
 | `protected_resource_metadata` | (optional) Configure or disable RFC9728 support.                                                                        |          |
-| `authenticate`                | (optional) Configure one more [authentication methods](#authentication-methods) by overriding the default methods       |
+| `authenticate`                | (optional) Configure [authentication methods](#authentication)                                                          |
 
-### [RFC9728](https://datatracker.ietf.org/doc/rfc9728/) Support (`protected_resource_metadata`)
-
-Caddy OIDC supports RFC9728 (OAuth 2.0 Protected Resource Metadata) to discover the OIDC provider metadata via the
-well-known URL `/.well-known/oauth-protected-resource`.
-
-If the request is unauthenticated, passes at least one `allow` rule, and the request is not made by a browser,
-then a `401 Unauthorized` response is returned with a WWW-Authenticate header conforming
-to [WWW-Authenticate Response](https://datatracker.ietf.org/doc/html/rfc9728#section-5.1).
-
-Settings can be controlled via the `oidc` directive `protected_resource_metadata`. The default behavior is to enable.
-
-```caddyfile
-# Disable RFC9728 support.
-# This makes /.well-known/oauth-protected-resource return a 404 Not Found.
-protected_resource_metadata off
-```
-
-#### Audience
-
-As a custom extension to the standard,
-resource metadata can be configured to include the expected token audience (`aud`) claim.
-
-If enabled, the metadata response will contain an additional `audience` field containing the configured client ID of the
-OIDC provider configuration.
-
-This is designed as an alternative to dynamic client registration to let another client (e.g. a CLI)
-use [JWT Exchange](https://datatracker.ietf.org/doc/html/rfc7523#section-8.2) with its own token with the OIDC provider
-and
-make requests to this server without prior knowledge of this server's OAuth configuration.
-
-```caddyfile
-# Include the expected audience field in the metadata
-protected_resource_metadata {
-    audience
-}
-```
-
-### Authentication Methods
+### Authentication
 
 This module uses a plugin architecture to allow different authentication methods to be configured under the Caddy plugin
 namespace `http.oidc.authenticator`.
@@ -115,7 +78,7 @@ When a request requires authentication, authentication methods are tried in the 
 The first authenticator to return a valid session from the request is used.
 An expired session is ignored, and the next authenticator is tried.
 
-The default configuration is shown below.
+The default configuration is shown below. These authenticators are not used if any authenticator is configured.
 
 ```caddyfile
 authenticate bearer
@@ -125,7 +88,13 @@ authenticate cookie {
 authenticate none
 ```
 
-The default authenticators are not used if any `authenticate` directive is configured.
+By default, any authentication information from any configured authenticator
+is stripped from the request before passing it upstream.
+This behavior can be disabled by adding the `preserve_request` option.
+
+```caddyfile
+authenticate preserve_request
+```
 
 #### Bearer
 
@@ -196,6 +165,43 @@ The `query` authenticator authenticates a JWT token passed via an incoming HTTP 
 
 ```caddyfile
 authenticate query access_token
+```
+
+### [RFC9728](https://datatracker.ietf.org/doc/rfc9728/) Support (`protected_resource_metadata`)
+
+Caddy OIDC supports RFC9728 (OAuth 2.0 Protected Resource Metadata) to discover the OIDC provider metadata via the
+well-known URL `/.well-known/oauth-protected-resource`.
+
+If the request is unauthenticated, passes at least one `allow` rule, and the request is not made by a browser,
+then a `401 Unauthorized` response is returned with a WWW-Authenticate header conforming
+to [WWW-Authenticate Response](https://datatracker.ietf.org/doc/html/rfc9728#section-5.1).
+
+Settings can be controlled via the `oidc` directive `protected_resource_metadata`. The default behavior is to enable.
+
+```caddyfile
+# Disable RFC9728 support.
+# This makes /.well-known/oauth-protected-resource return a 404 Not Found.
+protected_resource_metadata off
+```
+
+#### Audience
+
+As a custom extension to the standard,
+resource metadata can be configured to include the expected token audience (`aud`) claim.
+
+If enabled, the metadata response will contain an additional `audience` field containing the configured client ID of the
+OIDC provider configuration.
+
+This is designed as an alternative to dynamic client registration to let another client (e.g. a CLI)
+use [JWT Exchange](https://datatracker.ietf.org/doc/html/rfc7523#section-8.2) with its own token with the OIDC provider
+and
+make requests to this server without prior knowledge of this server's OAuth configuration.
+
+```caddyfile
+# Include the expected audience field in the metadata
+protected_resource_metadata {
+    audience
+}
 ```
 
 ## Handler Directive

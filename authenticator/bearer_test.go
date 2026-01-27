@@ -115,3 +115,13 @@ func TestBearerAuthentication_AuthenticateRequest_BearerTokenExpired(t *testing.
 	var ee *oidc.TokenExpiredError
 	assert.ErrorAs(t, err, &ee)
 }
+
+func TestBearerAuthenticator_StripRequest(t *testing.T) {
+	t.Parallel()
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", "Bearer xyz")
+
+	var au BearerAuthenticator
+	au.StripRequest(r)
+}

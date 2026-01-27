@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -460,4 +461,19 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	http.Redirect(rw, r, redirectUri, http.StatusFound)
 
 	return nil
+}
+
+func (au *SessionCookieAuthenticator) StripRequest(r *http.Request) {
+	// Read all cookies and only keep any that aren't our session cookie
+	cookies := slices.DeleteFunc(r.Cookies(), func(cookie *http.Cookie) bool {
+		return cookie.Name == au.Name
+	})
+
+	// Delete any original Cookie header
+	r.Header.Del("Cookie")
+
+	// Add any remaining cookies back to the request
+	for _, cookie := range cookies {
+		r.AddCookie(cookie)
+	}
 }

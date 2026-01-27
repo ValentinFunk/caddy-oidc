@@ -165,6 +165,9 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		return false, err
 	}
 
+	// Strip the request if configured
+	mw.Provider.Authenticators.StripRequest(r)
+
 	// Set replacer vars
 	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
 		mw.setReplacerVars(repl, s, authMethod)

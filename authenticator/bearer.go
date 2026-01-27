@@ -33,13 +33,13 @@ func (*BearerAuthenticator) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func (au *BearerAuthenticator) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (*BearerAuthenticator) UnmarshalCaddyfile(_ *caddyfile.Dispenser) error {
 	return nil
 }
 
 func (*BearerAuthenticator) Method() AuthMethod { return AuthMethodBearer }
 
-func (au *BearerAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+func (*BearerAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		return nil, caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthentication)
@@ -61,4 +61,8 @@ func (au *BearerAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *htt
 	}
 
 	return session.NewFromClaims(cfg.GetUsernameClaim(), id)
+}
+
+func (*BearerAuthenticator) StripRequest(r *http.Request) {
+	r.Header.Del("Authorization")
 }

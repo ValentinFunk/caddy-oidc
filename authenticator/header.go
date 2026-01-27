@@ -71,3 +71,7 @@ func (au *HeaderAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *htt
 
 	return session.NewFromClaims(cfg.GetUsernameClaim(), id)
 }
+
+func (au *HeaderAuthenticator) StripRequest(r *http.Request) {
+	r.Header.Del(au.Header)
+}
