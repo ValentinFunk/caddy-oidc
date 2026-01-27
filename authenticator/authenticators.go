@@ -19,7 +19,7 @@ import (
 //go:generate go tool go-enum -f=$GOFILE --marshal
 
 // AuthMethod represents one of the supported authentication methods.
-// ENUM(none, bearer, cookie)
+// ENUM(none, bearer, cookie, header, query)
 type AuthMethod string
 
 // ErrNoAuthentication is returned when no valid authentication could be found in the request.

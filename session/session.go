@@ -2,9 +2,13 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/tidwall/gjson"
 )
 
 // Anonymous returns a session to use when a request is unauthenticated.
@@ -15,6 +19,15 @@ func Anonymous() *Session {
 	}
 }
 
+// MissingRequiredClaimError is returned when a required claim is not provided.
+type MissingRequiredClaimError struct {
+	Claim string
+}
+
+func (e MissingRequiredClaimError) Error() string {
+	return fmt.Sprintf("request authentication is missing the required claim '%s'", e.Claim)
+}
+
 // Session represents an authentication session.
 // A session can be one that is authenticated (anonymous) or authenticated with a user identity.
 // A session may optionally expire.
@@ -23,6 +36,38 @@ type Session struct {
 	UID       string          `json:"u"`
 	ExpiresAt int64           `json:"e,omitempty"`
 	Claims    json.RawMessage `json:"c,omitempty"`
+}
+
+// A ClaimsDecoder is an interface for decoding JWT claims into a target JSON-decodable object.
+type ClaimsDecoder interface {
+	Claims(v any) error
+}
+
+// NewFromClaims creates a new session from JWT claims.
+// It assumes that the provided claims have been already validated.
+//
+// The provided uidClaim is used to extract the username from the token's claims.
+// It must exist and be a string type in the token's claims.
+func NewFromClaims(uidClaim string, claims ClaimsDecoder) (*Session, error) {
+	// A bit of a hack to extract the original claims from the decoder
+	var rawClaims *json.RawMessage
+
+	err := claims.Claims(&rawClaims)
+	if err != nil {
+		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
+	}
+
+	uid := gjson.GetBytes(*rawClaims, uidClaim)
+	if !uid.Exists() || uid.Type != gjson.String {
+		return nil, caddyhttp.Error(http.StatusUnauthorized, MissingRequiredClaimError{Claim: uidClaim})
+	}
+
+	return &Session{
+		UID:    uid.String(),
+		Claims: *rawClaims,
+
+		// Expiry deliberately omitted as the OIDC verifier configuration will verify the token exp claim
+	}, nil
 }
 
 // Expires returns the expiration time of the session.

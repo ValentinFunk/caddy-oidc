@@ -424,7 +424,7 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 
 	uidJson := gjson.GetBytes(*jsonClaims, cfg.GetUsernameClaim())
 	if !uidJson.Exists() || uidJson.Type != gjson.String {
-		return fmt.Errorf("invalid response from user info endpoint: %w", MissingRequiredClaimError{Claim: cfg.GetUsernameClaim()})
+		return fmt.Errorf("invalid response from user info endpoint: %w", session.MissingRequiredClaimError{Claim: cfg.GetUsernameClaim()})
 	}
 
 	s := &session.Session{

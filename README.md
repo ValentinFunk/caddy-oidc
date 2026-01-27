@@ -137,10 +137,10 @@ The bearer JWT must be signed by the OIDC provider.
 The `cookie` authenticator is used to authenticate requests using a self-signed session cookie.
 
 Enabling session cookie authentication also enables interactive authentication through
-the browser via the OAuth 2.0 Authorization Code Flow. 
+the browser via the OAuth 2.0 Authorization Code Flow.
 
-When enabled, if the request is not authenticated, the request is made by a browser, 
-and there is no matching explicit `allow` or `deny` rule, 
+When enabled, if the request is not authenticated, the request is made by a browser,
+and there is no matching explicit `allow` or `deny` rule,
 then the browser will be redirected to the OIDC provider for login.
 
 | Option         | Description                                                                                                                                                 |
@@ -177,6 +177,26 @@ The `none` authenticator always passes authentication by returning an anonymous 
 
 > [!NOTE]
 > A `none` authenticator should always be the last configured authenticator.
+
+#### Header
+
+The `header` authenticator authenticates a JWT token passed via an incoming HTTP request header (without any prefix).
+
+```caddyfile
+authenticate header X-Api-Key
+```
+
+#### Query
+
+The `query` authenticator authenticates a JWT token passed via an incoming HTTP request query parameter.
+
+> [!CAUTION]
+> There are several security implications to using query parameters for authentication.
+> See [RFC6750](https://datatracker.ietf.org/doc/html/rfc6750#section-2.3) for more information.
+
+```caddyfile
+authenticate query access_token
+```
 
 ## Handler Directive
 

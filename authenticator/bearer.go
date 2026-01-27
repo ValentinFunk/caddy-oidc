@@ -1,17 +1,13 @@
 package authenticator
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/relvacode/caddy-oidc/session"
-	"github.com/tidwall/gjson"
 )
 
 func init() {
@@ -23,15 +19,6 @@ var (
 	_ caddyfile.Unmarshaler = (*BearerAuthenticator)(nil)
 	_ RequestAuthenticator  = (*BearerAuthenticator)(nil)
 )
-
-// MissingRequiredClaimError is returned when a required claim is not provided.
-type MissingRequiredClaimError struct {
-	Claim string
-}
-
-func (e MissingRequiredClaimError) Error() string {
-	return fmt.Sprintf("request authentication is missing the required claim '%s'", e.Claim)
-}
 
 // BearerAuthenticator authenticates the request from a JWT found in the "Authorization" header.
 type BearerAuthenticator struct {
@@ -51,28 +38,6 @@ func (au *BearerAuthenticator) UnmarshalCaddyfile(d *caddyfile.Dispenser) error 
 }
 
 func (*BearerAuthenticator) Method() AuthMethod { return AuthMethodBearer }
-
-func (au *BearerAuthenticator) SessionFromIDToken(cfg OIDCConfiguration, id *oidc.IDToken) (*session.Session, error) {
-	// A bit of a hack to extract the original claims from the decoder
-	var rawClaims *json.RawMessage
-
-	err := id.Claims(&rawClaims)
-	if err != nil {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
-	}
-
-	uid := gjson.GetBytes(*rawClaims, cfg.GetUsernameClaim())
-	if !uid.Exists() || uid.Type != gjson.String {
-		return nil, caddyhttp.Error(http.StatusUnauthorized, MissingRequiredClaimError{Claim: cfg.GetUsernameClaim()})
-	}
-
-	return &session.Session{
-		UID:    uid.String(),
-		Claims: *rawClaims,
-
-		// Expiry deliberately omitted as the OIDC verifier configuration will verify the token exp claim
-	}, nil
-}
 
 func (au *BearerAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
 	authHeader := r.Header.Get("Authorization")
@@ -95,5 +60,5 @@ func (au *BearerAuthenticator) AuthenticateRequest(cfg OIDCConfiguration, r *htt
 		return nil, caddyhttp.Error(http.StatusUnauthorized, err)
 	}
 
-	return au.SessionFromIDToken(cfg, id)
+	return session.NewFromClaims(cfg.GetUsernameClaim(), id)
 }
