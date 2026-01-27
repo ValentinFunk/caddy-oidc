@@ -44,6 +44,9 @@ type RequestAuthenticator interface {
 	// AuthenticateRequest extracts authentication session information from the incoming request.
 	// If the request does not contain valid authentication, then it must return ErrNoAuthentication.
 	AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error)
+
+	// StripRequest removes any authentication information from the request.
+	StripRequest(r *http.Request)
 }
 
 var (
@@ -56,6 +59,7 @@ var (
 type Set struct {
 	AuthenticatorsRaw []json.RawMessage      `caddy:"namespace=http.oidc.authenticators inline_key=authenticator" json:"authenticators"`
 	Authenticators    []RequestAuthenticator `json:"-"`
+	PreserveRequest   bool                   `json:"preserve_request,omitzero"`
 }
 
 // NewDefaultSet returns the default set of authenticators.
@@ -76,16 +80,24 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	}
 
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
-		authenticatorName := d.Val()
+		directive := d.Val()
 
-		mod, err := caddy.GetModule("http.oidc.authenticators." + authenticatorName)
+		//nolint:gocritic
+		switch directive {
+		case "preserve_request":
+			set.PreserveRequest = true
+
+			continue
+		}
+
+		mod, err := caddy.GetModule("http.oidc.authenticators." + directive)
 		if err != nil {
-			return d.Errf("getting authenticator module '%s': %v", authenticatorName, err)
+			return d.Errf("getting authenticator module '%s': %v", directive, err)
 		}
 
 		unm, ok := mod.New().(RequestAuthenticatorAndCaddyfileUnmarshaler)
 		if !ok {
-			return d.Errf("authenticator module '%s' is not a Caddyfile unmarshaler", authenticatorName)
+			return d.Errf("authenticator module '%s' is not a Caddyfile unmarshaler", directive)
 		}
 
 		err = unm.UnmarshalCaddyfile(d)
@@ -95,11 +107,11 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		jsonBytes, err := json.Marshal(unm)
 		if err == nil {
-			jsonBytes, err = sjson.SetBytes(jsonBytes, "authenticator", authenticatorName)
+			jsonBytes, err = sjson.SetBytes(jsonBytes, "authenticator", directive)
 		}
 
 		if err != nil {
-			return d.Errf("marshaling authenticator module '%s': %v", authenticatorName, err)
+			return d.Errf("marshaling authenticator module '%s': %v", directive, err)
 		}
 
 		set.AuthenticatorsRaw = append(set.AuthenticatorsRaw, jsonBytes)
@@ -153,6 +165,18 @@ func (set *Set) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (Aut
 	}
 
 	return AuthMethodNone, session.Anonymous(), caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthentication)
+}
+
+// StripRequest removes any authentication information from the request.
+// If PreserveRequest is set, then this method does nothing.
+func (set *Set) StripRequest(r *http.Request) {
+	if set.PreserveRequest {
+		return
+	}
+
+	for _, authenticator := range set.Authenticators {
+		authenticator.StripRequest(r)
+	}
 }
 
 // GetAuthenticator returns the first RequestAuthenticator in the set equal to the requested type.

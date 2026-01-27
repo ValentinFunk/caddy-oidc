@@ -55,3 +55,18 @@ func TestQueryAuthenticator_AuthenticateRequest_MissingQuery(t *testing.T) {
 	_, err := au.AuthenticateRequest(&cfg, r)
 	assert.ErrorIs(t, err, ErrNoAuthentication)
 }
+
+func TestQueryAuthenticator_StripRequest(t *testing.T) {
+	t.Parallel()
+
+	var au = QueryAuthenticator{
+		Query: "api-key",
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/?api-key=xyz&foo=bar", nil)
+
+	au.StripRequest(r)
+
+	assert.Empty(t, r.URL.Query().Get("api-key"))
+	assert.Equal(t, "foo=bar", r.URL.RawQuery)
+}

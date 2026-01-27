@@ -37,3 +37,5 @@ func (*NoneAuthenticator) Method() AuthMethod { return AuthMethodNone }
 func (*NoneAuthenticator) AuthenticateRequest(_ OIDCConfiguration, _ *http.Request) (*session.Session, error) {
 	return session.Anonymous(), nil
 }
+
+func (*NoneAuthenticator) StripRequest(_ *http.Request) {}

@@ -224,3 +224,31 @@ func TestSessionCookieAuthenticator_AuthenticateRequest_SessionExpired(t *testin
 	var ee *oidc.TokenExpiredError
 	assert.ErrorAs(t, err, &ee)
 }
+
+func TestSessionCookieAuthenticator_StripRequest(t *testing.T) {
+	t.Parallel()
+
+	var au = &SessionCookieAuthenticator{
+		Name:   "test-cookie",
+		Secret: "Y4lbVNr01M4NyBCUSNbrAL4cavA6kjdM",
+	}
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	err := au.Provision(ctx)
+	require.NoError(t, err)
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	r.Header.Add("Cookie", "some-other-cookie=foobar")
+	r.Header.Add("Cookie", "test-cookie=xyz; some-second-cookie=barfoo")
+
+	au.StripRequest(r)
+
+	cookies := r.Cookies()
+	if assert.Len(t, cookies, 2) {
+		assert.Equal(t, "some-other-cookie=foobar", cookies[0].String())
+		assert.Equal(t, "some-second-cookie=barfoo", cookies[1].String())
+	}
+}
