@@ -1,4 +1,4 @@
-package caddy_oidc
+package request
 
 import (
 	"crypto/tls"
@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRequestUrl(t *testing.T) {
+func TestURL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -75,7 +75,7 @@ func TestRequestUrl(t *testing.T) {
 			t.Parallel()
 
 			req := tt.request()
-			got := RequestURL(req)
+			got := URL(req)
 			assert.Equal(t, tt.expected, got.String())
 		})
 	}
@@ -88,27 +88,27 @@ func TestShouldStartLogin(t *testing.T) {
 		t.Parallel()
 
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
-		assert.False(t, ShouldStartLogin(r))
+		assert.False(t, IsBrowserInteractive(r))
 	})
 	t.Run("can't accept", func(t *testing.T) {
 		t.Parallel()
 
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set("Accept", "application/json")
-		assert.False(t, ShouldStartLogin(r))
+		assert.False(t, IsBrowserInteractive(r))
 	})
 	t.Run("Sec-Fetch-Dest", func(t *testing.T) {
 		t.Parallel()
 
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set("Sec-Fetch-Dest", "document")
-		assert.True(t, ShouldStartLogin(r))
+		assert.True(t, IsBrowserInteractive(r))
 	})
 	t.Run("accept HTML", func(t *testing.T) {
 		t.Parallel()
 
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.Header.Set("Accept", "text/html")
-		assert.True(t, ShouldStartLogin(r))
+		assert.True(t, IsBrowserInteractive(r))
 	})
 }

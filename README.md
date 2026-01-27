@@ -59,16 +59,15 @@ example.com {
 
 ## Global Directive
 
-| Option                        | Description                                                                                                                                                 | Default            |
-|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
-| `issuer`                      | The OIDC issuer URL                                                                                                                                         |                    |
-| `client_id`                   | The OIDC client ID                                                                                                                                          |                    |
-| `redirect_url`                | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. | `/oauth2/callback` |
-| `tls_insecure_skip_verify`    | (optional) Skip TLS certificate verification with the OIDC provider.                                                                                        |                    |
-| `scope`                       | (optional) The scope to request from the OIDC provider. The `openid` scope is required for browser-based login to work. Defaults to `openid`.               | `openid`           |
-| `username`                    | (optional) The claim to use as the username. Defaults to `sub`.                                                                                             | `sub`              |
-| `protected_resource_metadata` | (optional) Configure or disable RFC9728 support.                                                                                                            |                    |
-| `authenticate`                | (optional) Configure one more [authentication methods](#authentication-methods) by overriding the default methods                                           |
+| Option                        | Description                                                                                                             | Default  |
+|-------------------------------|-------------------------------------------------------------------------------------------------------------------------|----------|
+| `issuer`                      | The OIDC issuer URL                                                                                                     |          |
+| `client_id`                   | The OIDC client ID                                                                                                      |          |
+| `tls_insecure_skip_verify`    | (optional) Skip TLS certificate verification with the OIDC provider.                                                    |          |
+| `scope`                       | (optional) The scope to request from the OIDC provider. The `openid` scope is required for browser-based login to work. | `openid` |
+| `username`                    | (optional) The claim to use as the username. Defaults to `sub`.                                                         | `sub`    |
+| `protected_resource_metadata` | (optional) Configure or disable RFC9728 support.                                                                        |          |
+| `authenticate`                | (optional) Configure one more [authentication methods](#authentication-methods) by overriding the default methods       |
 
 ### [RFC9728](https://datatracker.ietf.org/doc/rfc9728/) Support (`protected_resource_metadata`)
 
@@ -135,20 +134,28 @@ The bearer JWT must be signed by the OIDC provider.
 
 #### Cookie
 
-The `cookie` authenticator is used to authenticate requests using a session cookie.
-A cookie authenticator must be configured to enable OAuth2 browser-based login via the Authorization Code Flow.
+The `cookie` authenticator is used to authenticate requests using a self-signed session cookie.
 
-| Option      | Description                                                                  |
-|-------------|------------------------------------------------------------------------------|
-| `name`      | The name of the cookie.                                                      |
-| `secret`    | The 32 or 64 byte secret key to encrypt session cookies                      |
-| `domain`    | (optional) The domain of the cookie.                                         |
-| `path`      | (optional) The path of the cookie.                                           |
-| `insecure`  | (optional) Disable secure cookies.                                           |
-| `same_site` | (optional) The samesite mode of the cookie. One of `lax`, `strict` or `none` |
-| `claims`    | (optional) Claims to copy into the session cookie.                           | 
+Enabling session cookie authentication also enables interactive authentication through
+the browser via the OAuth 2.0 Authorization Code Flow. 
+
+When enabled, if the request is not authenticated, the request is made by a browser, 
+and there is no matching explicit `allow` or `deny` rule, 
+then the browser will be redirected to the OIDC provider for login.
+
+| Option         | Description                                                                                                                                                 |
+|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `name`         | The name of the cookie.                                                                                                                                     |
+| `secret`       | The 32 or 64 byte secret key to encrypt session cookies                                                                                                     |
+| `domain`       | (optional) The domain of the cookie.                                                                                                                        |
+| `path`         | (optional) The path of the cookie.                                                                                                                          |
+| `insecure`     | (optional) Disable secure cookies.                                                                                                                          |
+| `same_site`    | (optional) The samesite mode of the cookie. One of `lax`, `strict` or `none`                                                                                |
+| `claims`       | (optional) Claims to copy into the session cookie.                                                                                                          |
+| `redirect_url` | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. |
 
 The default configuration is shown below.
+Any individual option can be overridden whilst preserving the default values for options not specified.
 
 ```caddyfile
 authenticate cookie {
@@ -156,8 +163,13 @@ authenticate cookie {
     same_site lax
     path /
     secret {env.COOKIE_SECRET}
+    redirect_url /oauth2/callback
 }
 ```
+
+To minimize the size of the cookie, no claims are copied into the session cookie by default.
+Claims can be copied by specifying the `claims` option if needed for access policy rules or placeholder variables (e.g.,
+for logging).
 
 #### None
 

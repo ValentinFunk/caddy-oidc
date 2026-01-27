@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -14,6 +15,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	"github.com/gorilla/securecookie"
+	"github.com/relvacode/caddy-oidc/request"
 	"github.com/relvacode/caddy-oidc/session"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -32,6 +34,7 @@ const (
 	defaultCookiePath     = "/"
 	//nolint:gosec
 	defaultCookieSecret = "{env.COOKIE_SECRET}"
+	defaultRedirectURL  = "/oauth2/callback"
 )
 
 // ErrNoIdToken is returned when an OAuth2 code exchange response does not contain an ID token.
@@ -42,7 +45,6 @@ var ErrNoIdToken = errors.New("authentication server did not return an ID token"
 type OAuthAuthorizationFlowConfiguration interface {
 	OIDCConfiguration
 
-	GetAbsRedirectUri(r *http.Request) string
 	AuthCodeURL(ctx context.Context, state string, opts ...oauth2.AuthCodeOption) (string, error)
 	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*oidc.UserInfo, error)
@@ -75,15 +77,17 @@ var (
 
 // SessionCookieAuthenticator authenticates the request from a signed cookie.
 type SessionCookieAuthenticator struct {
-	Name     string   `json:"name,omitempty"`
-	SameSite SameSite `json:"same_site,omitempty"`
-	Insecure bool     `json:"insecure,omitempty"`
-	Domain   string   `json:"domain,omitempty"`
-	Path     string   `json:"path,omitempty"`
-	Secret   string   `json:"secret,omitempty"`
-	Claims   []string `json:"claims,omitempty"`
+	Name        string   `json:"name,omitempty"`
+	SameSite    SameSite `json:"same_site,omitempty"`
+	Insecure    bool     `json:"insecure,omitempty"`
+	Domain      string   `json:"domain,omitempty"`
+	Path        string   `json:"path,omitempty"`
+	Secret      string   `json:"secret,omitempty"`
+	Claims      []string `json:"claims,omitempty"`
+	RedirectURL string   `json:"redirect_url,omitempty"`
 
-	secure *securecookie.SecureCookie
+	secure      *securecookie.SecureCookie
+	redirectUrl *url.URL
 }
 
 func (*SessionCookieAuthenticator) CaddyModule() caddy.ModuleInfo {
@@ -137,6 +141,10 @@ func (au *SessionCookieAuthenticator) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 			au.Claims = append(au.Claims, d.RemainingArgs()...)
 		case "secret":
 			if !d.Args(&au.Secret) {
+				return d.ArgErr()
+			}
+		case "redirect_url":
+			if !d.Args(&au.RedirectURL) {
 				return d.ArgErr()
 			}
 		default:
@@ -194,6 +202,20 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 
 	au.secure = securecookie.New([]byte(au.Secret), []byte(au.Secret))
 	au.secure.SetSerializer(&securecookie.JSONEncoder{})
+
+	if au.RedirectURL == "" {
+		au.RedirectURL = defaultRedirectURL
+	}
+
+	au.RedirectURL, err = repl.ReplaceOrErr(au.RedirectURL, true, true)
+	if err != nil {
+		return err
+	}
+
+	au.redirectUrl, err = url.Parse(au.RedirectURL)
+	if err != nil {
+		return fmt.Errorf("invalid redirect_url: %w", err)
+	}
 
 	return nil
 }
@@ -255,6 +277,15 @@ type CSRFToken struct {
 	RedirectURI  string `json:"r"`
 }
 
+// GetAbsRedirectUri returns the absolute redirect URI, resolving it relative to the request URL if necessary.
+func (au *SessionCookieAuthenticator) GetAbsRedirectUri(r *http.Request) *url.URL {
+	if au.redirectUrl.IsAbs() {
+		return au.redirectUrl
+	}
+
+	return request.URL(r).ResolveReference(au.redirectUrl)
+}
+
 // StartLogin starts the authorization flow by setting the state cookie and redirecting to the authorization endpoint.
 // The state cookie is in the format of `<cookie_name>|<state>`, with the value containing the PKCE code verifier.
 // The OAuth2 redirect URI is set to the configured redirect URI made absolute relative to the request URL.
@@ -279,7 +310,7 @@ func (au *SessionCookieAuthenticator) StartLogin(cfg OAuthAuthorizationFlowConfi
 
 	authCodeUrl, err := cfg.AuthCodeURL(r.Context(), state,
 		oauth2.S256ChallengeOption(pkceVerifier),
-		oauth2.SetAuthURLParam("redirect_uri", cfg.GetAbsRedirectUri(r)),
+		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectUri(r).String()),
 	)
 	if err != nil {
 		return err
@@ -326,7 +357,7 @@ func (au *SessionCookieAuthenticator) handleCodeExchange(
 ) (*oidc.UserInfo, time.Time, error) {
 	response, err := cfg.Exchange(r.Context(), r.FormValue("code"),
 		oauth2.VerifierOption(pkceVerifier),
-		oauth2.SetAuthURLParam("redirect_uri", cfg.GetAbsRedirectUri(r)),
+		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectUri(r).String()),
 	)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to exchange token: %w", err)
@@ -353,6 +384,18 @@ func (au *SessionCookieAuthenticator) handleCodeExchange(
 	}
 
 	return userInfo, response.Expiry, nil
+}
+
+// IsCallbackURL returns true if the request is a callback from the authorization endpoint.
+// Determined if the absolute form of the redirect URI relative to the current request
+// matches the scheme, host, and path of the current request.
+func (au *SessionCookieAuthenticator) IsCallbackURL(r *http.Request) bool {
+	var (
+		req      = request.URL(r)
+		redirect = au.GetAbsRedirectUri(r)
+	)
+
+	return req.Scheme == redirect.Scheme && req.Host == redirect.Host && req.Path == redirect.Path
 }
 
 // HandleCallback handles the callback from the authorization endpoint.

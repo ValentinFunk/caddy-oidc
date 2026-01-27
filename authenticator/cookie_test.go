@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -27,6 +28,11 @@ func TestSessionCookieAuthenticator_UnmarshalCaddyfile(t *testing.T) {
 		expect    SessionCookieAuthenticator
 		shouldErr bool
 	}{
+		{
+			name:   "empty",
+			input:  "",
+			expect: SessionCookieAuthenticator{},
+		},
 		{
 			name:  "inline name",
 			input: `my_cookie`,
@@ -78,6 +84,44 @@ func TestSessionCookieAuthenticator_UnmarshalCaddyfile(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expect, cookies)
+		})
+	}
+}
+
+func TestSessionCookieAuthenticator_GetAbsRedirectUri(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		redirect string
+		expect   string
+	}{
+		{
+			name:     "relative",
+			redirect: "/foo",
+			expect:   "http://example.com/foo",
+		},
+		{
+			name:     "absolute",
+			redirect: "http://example.org/foo",
+			expect:   "http://example.org/foo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			u, err := url.Parse(tt.redirect)
+			require.NoError(t, err)
+
+			var au = &SessionCookieAuthenticator{
+				redirectUrl: u,
+			}
+
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/auth?bar=baz#xyz", nil)
+
+			assert.Equal(t, tt.expect, au.GetAbsRedirectUri(r).String())
 		})
 	}
 }

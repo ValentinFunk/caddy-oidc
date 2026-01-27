@@ -135,6 +135,7 @@ type testGetAuthenticateImpl1 struct {
 
 func (testGetAuthenticateImpl1) Method() AuthMethod { return AuthMethodNone }
 func (testGetAuthenticateImpl1) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -144,6 +145,7 @@ type testGetAuthenticateImpl2 struct {
 
 func (testGetAuthenticateImpl2) Method() AuthMethod { return AuthMethodNone }
 func (testGetAuthenticateImpl2) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 
@@ -153,6 +155,7 @@ type testGetAuthenticateImpl3 struct {
 
 func (testGetAuthenticateImpl3) Method() AuthMethod { return AuthMethodNone }
 func (testGetAuthenticateImpl3) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (*session.Session, error) {
+	//nolint:nilnil
 	return nil, nil
 }
 

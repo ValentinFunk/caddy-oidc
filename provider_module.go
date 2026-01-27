@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -25,8 +24,6 @@ func init() {
 }
 
 const (
-	// DefaultRedirectUriPath is the default redirect URI used for OAuth callback if none is specified.
-	DefaultRedirectUriPath = "/oauth2/callback"
 	// DefaultUsernameClaim is the default username claim to use for the BearerAuthenticator if none is specified.
 	DefaultUsernameClaim = "sub"
 )
@@ -41,7 +38,6 @@ type OIDCProviderModule struct {
 	Issuer                    string                                  `json:"issuer"`
 	ClientID                  string                                  `json:"client_id"`
 	Scope                     []string                                `json:"scope,omitempty"`
-	RedirectURI               string                                  `json:"redirect_uri,omitempty"`
 	Username                  string                                  `json:"username,omitempty"`
 	Authenticators            *authenticator.Set                      `json:"authenticators,omitempty"`
 	TLSInsecureSkipVerify     bool                                    `json:"tls_insecure_skip_verify,omitempty"`
@@ -60,7 +56,6 @@ func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
 	{
 		issuer <issuer>
 		client_id <client_id>
-		redirect_uri [<redirect_uri>]
 		authenticate <authenticator>
 		tls_insecure_skip_verify
 		scope [<scope>...]
@@ -78,10 +73,7 @@ func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			if !d.Args(&m.ClientID) {
 				return d.ArgErr()
 			}
-		case "redirect_uri":
-			if !d.Args(&m.RedirectURI) {
-				return d.ArgErr()
-			}
+
 		case "username":
 			if !d.Args(&m.Username) {
 				return d.ArgErr()
@@ -139,10 +131,6 @@ func (m *OIDCProviderModule) Provision(ctx caddy.Context) error {
 		m.Username = DefaultUsernameClaim
 	}
 
-	if m.RedirectURI == "" {
-		m.RedirectURI = DefaultRedirectUriPath
-	}
-
 	return nil
 }
 
@@ -189,17 +177,11 @@ func (m *OIDCProviderModule) setupHTTPClient(log *zap.Logger) *http.Client {
 
 // Create creates a Provider instance from this provider module configuration.
 func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Provider, error) {
-	redirectUri, err := url.Parse(m.RedirectURI)
-	if err != nil {
-		return nil, fmt.Errorf("invalid redirect_uri: %w", err)
-	}
-
 	var (
 		log        = ctx.Logger(m)
 		httpClient = m.setupHTTPClient(log)
 		authorizer = &Provider{
 			Log:               log,
-			RedirectURL:       redirectUri,
 			Authenticators:    *m.Authenticators,
 			Clock:             time.Now,
 			ProtectedResource: m.ProtectedResourceMetadata,

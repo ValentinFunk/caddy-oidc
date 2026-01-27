@@ -1,4 +1,4 @@
-package caddy_oidc
+package request
 
 import (
 	"net/http"
@@ -7,9 +7,9 @@ import (
 	"github.com/munnerz/goautoneg"
 )
 
-// RequestURL returns the original fully qualified request URL made by the client before any intermediate proxies.
+// URL returns the original fully qualified request URL made by the client before any intermediate proxies.
 // Assumes that Caddy has already sanitized any X-Forwarded-* headers.
-func RequestURL(r *http.Request) *url.URL {
+func URL(r *http.Request) *url.URL {
 	var u = new(url.URL)
 
 	*u = *r.URL
@@ -27,13 +27,8 @@ func RequestURL(r *http.Request) *url.URL {
 	return u
 }
 
-// ShouldStartLogin returns true if the request should start the authorization flow on a failed authentication attempt
-// based on if the request is likely coming from a browser.
-func ShouldStartLogin(r *http.Request) bool {
-	if r.Method != http.MethodGet {
-		return false
-	}
-
+// IsBrowserInteractive returns true if the request is likely coming from a browser.
+func IsBrowserInteractive(r *http.Request) bool {
 	dest := r.Header.Get("Sec-Fetch-Dest")
 	if dest != "" {
 		return dest == "document" || dest == "iframe"

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
@@ -61,9 +60,6 @@ func GenerateTestProvider() *Provider {
 	provider := &Provider{
 		Clock: func() time.Time {
 			return time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-		},
-		RedirectURL: &url.URL{
-			Path: "/oauth2/callback",
 		},
 		Authenticators: authenticator.Set{
 			Authenticators: []authenticator.RequestAuthenticator{

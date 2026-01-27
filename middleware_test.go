@@ -85,7 +85,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_BearerOnly(t *testing.T) {
 
 	err := auth.ServeHTTP(w, r, h)
 	assert.Equal(t, 0, h.calls)
-	assert.Error(t, err)
+	require.Error(t, err)
 
 	var he caddyhttp.HandlerError
 	if assert.ErrorAs(t, err, &he) {

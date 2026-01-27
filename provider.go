@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/relvacode/caddy-oidc/authenticator"
+	"github.com/relvacode/caddy-oidc/request"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
@@ -63,7 +63,6 @@ var (
 // Provider holds the built configuration for an OIDC provider and authentication logic.
 type Provider struct {
 	Log               *zap.Logger
-	RedirectURL       *url.URL
 	Clock             func() time.Time
 	Issuer            string
 	UsernameClaim     string
@@ -82,26 +81,6 @@ func (pr *Provider) GetVerifier(ctx context.Context) (*oidc.IDTokenVerifier, err
 	}
 
 	return discovery.Verifier, nil
-}
-
-// GetAbsRedirectUri returns the absolute redirect URI, resolving it relative to the request URL if necessary.
-func (pr *Provider) GetAbsRedirectUri(r *http.Request) string {
-	if pr.RedirectURL.IsAbs() {
-		return pr.RedirectURL.String()
-	}
-
-	// Caddy should be sanitising X-Forwarded-Proto headers
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-
-	var u = *r.URL
-
-	u.Scheme = scheme
-	u.Host = r.Host
-
-	return u.ResolveReference(pr.RedirectURL).String()
 }
 
 func (pr *Provider) AuthCodeURL(ctx context.Context, state string, opts ...oauth2.AuthCodeOption) (string, error) {
@@ -144,9 +123,9 @@ func (pr *Provider) ProtectedResourceMetadata(r *http.Request) (*OAuthProtectedR
 	}
 
 	var (
-		ru       = RequestURL(r)
-		metadata = &OAuthProtectedResource{
-			Resource:        fmt.Sprintf("%s://%s", ru.Scheme, ru.Host),
+		requestURL = request.URL(r)
+		metadata   = &OAuthProtectedResource{
+			Resource:        fmt.Sprintf("%s://%s", requestURL.Scheme, requestURL.Host),
 			ScopesSupported: discovery.OAuth2.Scopes(),
 			AuthorizationServers: []string{
 				pr.Issuer,

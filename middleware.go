@@ -12,6 +12,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/relvacode/caddy-oidc/authenticator"
+	"github.com/relvacode/caddy-oidc/request"
 	"github.com/relvacode/caddy-oidc/session"
 	"github.com/tidwall/gjson"
 )
@@ -147,13 +148,11 @@ func (*OIDCMiddleware) setReplacerVars(repl *caddy.Replacer, session *session.Se
 func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Request) (bool, error) {
 	// Check if the request is an OAuth callback.
 	// Only supported if there is a session cookie authenticator configuration.
-	if r.Method == http.MethodGet && r.URL.Path == mw.Provider.RedirectURL.Path {
+	if r.Method == http.MethodGet {
 		cookie, ok := authenticator.GetAuthenticator[*authenticator.SessionCookieAuthenticator](&mw.Provider.Authenticators)
-		if !ok {
-			return false, caddyhttp.Error(http.StatusNotFound, errors.New("session cookie authenticator not configured"))
+		if ok && cookie.IsCallbackURL(r) {
+			return true, cookie.HandleCallback(mw.Provider, rw, r)
 		}
-
-		return true, cookie.HandleCallback(mw.Provider, rw, r)
 	}
 
 	// Check for supported well-knowns
@@ -197,7 +196,7 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 		//		Start the authorization flow if the request is likely coming from a browser (if session cookies are enabled).
 		//		Otherwise, return a 401 Unauthorized error.
 		if s.Anonymous {
-			if ShouldStartLogin(r) {
+			if r.Method == http.MethodGet && request.IsBrowserInteractive(r) {
 				cookie, ok := authenticator.GetAuthenticator[*authenticator.SessionCookieAuthenticator](&mw.Provider.Authenticators)
 				if ok {
 					return true, cookie.StartLogin(mw.Provider, rw, r)

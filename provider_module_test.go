@@ -23,7 +23,6 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 			input: `{
 				issuer http://openid/example
 				client_id xyz
-				redirect_uri http://localhost/oauth/callback
 				tls_insecure_skip_verify
 				scope openid email profile
 				username email
@@ -34,6 +33,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 					insecure
 					secret 7DFSrbya1rvBBmcaxD
 					claim email role
+					redirect_url http://localhost/oauth/callback
 				}
 				authenticate none
 				protected_resource_metadata {
@@ -49,7 +49,6 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
     "email",
     "profile"
   ],
-  "redirect_uri": "http://localhost/oauth/callback",
   "username": "email",
   "authenticators": {
     "authenticators": [
@@ -65,6 +64,7 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
           "email",
           "role"
         ],
+		"redirect_url": "http://localhost/oauth/callback",
         "authenticator": "cookie"
       },
       {
