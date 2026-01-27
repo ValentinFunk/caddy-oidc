@@ -7,6 +7,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSession_ValidateClock(t *testing.T) {
@@ -96,7 +97,8 @@ func TestNewFromClaims(t *testing.T) {
 			t.Parallel()
 
 			s, err := NewFromClaims(tt.uidClaim, JSONClaims(tt.claims))
-			assert.ErrorIs(t, err, tt.expectErr)
+			require.ErrorIs(t, err, tt.expectErr)
+
 			if s != nil {
 				assert.Equal(t, tt.expect, *s)
 			}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/relvacode/caddy-oidc/internal/pkgtest"
+	"github.com/relvacode/caddy-oidc/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,7 +92,7 @@ func TestBearerAuthentication_AuthenticateRequest_MissingUsernameClaim(t *testin
 
 	_, err := au.AuthenticateRequest(&cfg, r)
 
-	var mce MissingRequiredClaimError
+	var mce session.MissingRequiredClaimError
 	if assert.ErrorAs(t, err, &mce) {
 		assert.Equal(t, "not exist", mce.Claim)
 	}

@@ -23,6 +23,8 @@ func TestAuthenticatorSet_UnmarshalCaddyfile(t *testing.T) {
 	var dis = caddyfile.NewTestDispenser(`
 		authenticate bearer
 		authenticate none
+		authenticate header X-Api-Key
+		authenticate header X-Access-Token
 	`)
 
 	var authenticatorSet Set
@@ -35,6 +37,8 @@ func TestAuthenticatorSet_UnmarshalCaddyfile(t *testing.T) {
 	assert.Equal(t, []json.RawMessage{
 		json.RawMessage(`{"authenticator":"bearer"}`),
 		json.RawMessage(`{"authenticator":"none"}`),
+		json.RawMessage(`{"header":"X-Api-Key","authenticator":"header"}`),
+		json.RawMessage(`{"header":"X-Access-Token","authenticator":"header"}`),
 	}, authenticatorSet.AuthenticatorsRaw)
 }
 
