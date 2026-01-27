@@ -9,6 +9,8 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
+	_ "github.com/relvacode/caddy-oidc/authenticator"
 )
 
 const moduleID = "oidc"
@@ -80,7 +82,7 @@ var _ caddy.Provisioner = (*App)(nil)
 // App holds configuration for all the named OIDC providers within a Caddy configuration.
 type App struct {
 	Providers map[string]*OIDCProviderModule `json:"providers,omitempty"`
-	provided  map[string]*DeferredResult[*Authenticator]
+	provided  map[string]*Provider
 }
 
 func (*App) CaddyModule() caddy.ModuleInfo {
@@ -94,7 +96,7 @@ func (*App) Start() error { return nil }
 func (*App) Stop() error  { return nil }
 
 func (a *App) Provision(ctx caddy.Context) error {
-	a.provided = make(map[string]*DeferredResult[*Authenticator], len(a.Providers))
+	a.provided = make(map[string]*Provider, len(a.Providers))
 
 	for providerName := range a.Providers {
 		var provider = a.Providers[providerName]
@@ -104,11 +106,14 @@ func (a *App) Provision(ctx caddy.Context) error {
 			return fmt.Errorf("failed to provision oidc provider '%s': %w", providerName, err)
 		}
 
+		cfg, err := provider.Create(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create oidc provider configuration '%s': %w", providerName, err)
+		}
+
 		// Built authenticator configuration is deferred as we don't want to block provision during OIDC discovery.
 		// Doing so might mean discovery isn't even possible until Caddy fully initializes if the IDP is proxied by Caddy as well.
-		a.provided[providerName] = Defer(func() (*Authenticator, error) {
-			return provider.Create(ctx)
-		})
+		a.provided[providerName] = cfg
 	}
 
 	return nil

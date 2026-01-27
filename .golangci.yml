@@ -17,9 +17,13 @@ linters:
           - goconst
           - gochecknoglobals
           - lll
+          - varnamelen
       - linters:
           - funlen
         text: "Function 'UnmarshalCaddyfile' has too many statements"
+      - linters:
+          - funlen
+        text: "Function 'Provision' is too long"
       - linters:
           - err113
         text: "do not define dynamic errors, use wrapped static errors instead"
@@ -37,6 +41,8 @@ linters:
         - d *caddyfile.Dispenser
         - w *httptest.ResponseRecorder
         - u *url.URL
+        - s *session.Session
+        - s session.Session
     tagliatelle:
       case:
         rules:
@@ -62,6 +68,7 @@ linters:
         main:
           allow:
             - $gostd
+            - github.com/relvacode/caddy-oidc
             - github.com/caddyserver/caddy/v2
             - github.com/tidwall/gjson
             - github.com/tidwall/sjson

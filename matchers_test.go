@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/relvacode/caddy-oidc/authenticator"
+	"github.com/relvacode/caddy-oidc/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,25 +100,25 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		session Session
+		session session.Session
 		matcher MatchUser
 		match   bool
 	}{
 		{
 			name:    "match empty",
-			session: Session{},
+			session: session.Session{},
 			matcher: MatchUser{},
 			match:   true,
 		},
 		{
 			name:    "match anonymous",
-			session: Session{Anonymous: true},
+			session: session.Session{Anonymous: true},
 			matcher: MatchUser{},
 			match:   false,
 		},
 		{
 			name:    "match any user",
-			session: Session{UID: "steve@example.com"},
+			session: session.Session{UID: "steve@example.com"},
 			matcher: MatchUser{
 				Usernames: []string{"*"},
 			},
@@ -124,7 +126,7 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "match exact multiple",
-			session: Session{UID: "steve@example.com"},
+			session: session.Session{UID: "steve@example.com"},
 			matcher: MatchUser{
 				Usernames: []string{"bob@example.com", "steve@example.com"},
 			},
@@ -132,7 +134,7 @@ func TestMatchUser_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "match exact with replacer variable",
-			session: Session{UID: "steve@example.com"},
+			session: session.Session{UID: "steve@example.com"},
 			matcher: MatchUser{
 				Usernames: []string{"steve@{test.domain}"},
 			},
@@ -162,7 +164,7 @@ func TestMatchAnonymous_MatchWithError(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		session *Session
+		session *session.Session
 		match   bool
 	}{
 		{
@@ -172,12 +174,12 @@ func TestMatchAnonymous_MatchWithError(t *testing.T) {
 		},
 		{
 			name:    "match anonymous session",
-			session: &Session{Anonymous: true},
+			session: &session.Session{Anonymous: true},
 			match:   true,
 		},
 		{
 			name:    "no match authenticated session",
-			session: &Session{UID: "steve@example.com"},
+			session: &session.Session{UID: "steve@example.com"},
 			match:   false,
 		},
 	}
@@ -319,7 +321,7 @@ func TestMatchClaim_MatchWithError(t *testing.T) {
 			t.Parallel()
 
 			r := httptest.NewRequest(http.MethodGet, "/", nil)
-			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, &Session{
+			r = r.WithContext(context.WithValue(r.Context(), SessionCtxKey, &session.Session{
 				Claims: json.RawMessage(tt.claims),
 			}))
 
@@ -339,31 +341,31 @@ func TestMatchAuthMethod_MatchWithError(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		method  AuthMethod
+		method  authenticator.AuthMethod
 		matcher MatchAuthMethod
 		match   bool
 	}{
 		{
 			name:   "unmatched",
-			method: AuthMethodNone,
+			method: authenticator.AuthMethodNone,
 			matcher: MatchAuthMethod{
-				Match: []AuthMethod{AuthMethodCookie, AuthMethodBearer},
+				Match: []authenticator.AuthMethod{authenticator.AuthMethodCookie, authenticator.AuthMethodBearer},
 			},
 			match: false,
 		},
 		{
 			name:   "match one",
-			method: AuthMethodCookie,
+			method: authenticator.AuthMethodCookie,
 			matcher: MatchAuthMethod{
-				Match: []AuthMethod{AuthMethodCookie},
+				Match: []authenticator.AuthMethod{authenticator.AuthMethodCookie},
 			},
 			match: true,
 		},
 		{
 			name:   "match any",
-			method: AuthMethodCookie,
+			method: authenticator.AuthMethodCookie,
 			matcher: MatchAuthMethod{
-				Match: []AuthMethod{AuthMethodBearer, AuthMethodCookie},
+				Match: []authenticator.AuthMethod{authenticator.AuthMethodBearer, authenticator.AuthMethodCookie},
 			},
 			match: true,
 		},

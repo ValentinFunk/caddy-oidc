@@ -9,6 +9,8 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/relvacode/caddy-oidc/authenticator"
+	"github.com/relvacode/caddy-oidc/session"
 	"github.com/tidwall/gjson"
 )
 
@@ -70,14 +72,14 @@ func (m *MatchUser) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (m *MatchUser) MatchWithError(r *http.Request) (bool, error) {
-	session, ok := r.Context().Value(SessionCtxKey).(*Session)
+	s, ok := r.Context().Value(SessionCtxKey).(*session.Session)
 	if !ok {
 		// No session stored in request context
 		return false, nil
 	}
 
 	// No users can match anonymous sessions
-	if session.Anonymous {
+	if s.Anonymous {
 		return false, nil
 	}
 
@@ -88,7 +90,7 @@ func (m *MatchUser) MatchWithError(r *http.Request) (bool, error) {
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer) //nolint:forcetypeassert
 
 	for _, allowedVal := range m.Usernames {
-		if MatchWildcard(repl.ReplaceAll(allowedVal, ""), session.UID) {
+		if MatchWildcard(repl.ReplaceAll(allowedVal, ""), s.UID) {
 			return true, nil
 		}
 	}
@@ -133,7 +135,7 @@ func (*MatchAnonymous) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (*MatchAnonymous) MatchWithError(r *http.Request) (bool, error) {
-	s, ok := r.Context().Value(SessionCtxKey).(*Session)
+	s, ok := r.Context().Value(SessionCtxKey).(*session.Session)
 	if !ok || s.Anonymous {
 		return true, nil
 	}
@@ -232,7 +234,7 @@ func (m *MatchClaim) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
-	session, ok := r.Context().Value(SessionCtxKey).(*Session)
+	s, ok := r.Context().Value(SessionCtxKey).(*session.Session)
 	if !ok {
 		// No session stored in request context
 		return false, nil
@@ -240,7 +242,7 @@ func (m *MatchClaim) MatchWithError(r *http.Request) (bool, error) {
 
 	repl := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer) //nolint:forcetypeassert
 
-	claims := gjson.ParseBytes(session.Claims)
+	claims := gjson.ParseBytes(s.Claims)
 	if !claims.IsObject() {
 		return false, errors.New("invalid JSON object in session claims")
 	}
@@ -268,7 +270,7 @@ var (
 
 // MatchAuthMethod matches the authentication method used for the incoming request.
 type MatchAuthMethod struct {
-	Match []AuthMethod `json:"match,omitempty"`
+	Match []authenticator.AuthMethod `json:"match,omitempty"`
 }
 
 func (*MatchAuthMethod) CaddyModule() caddy.ModuleInfo {
@@ -285,7 +287,7 @@ func (m *MatchAuthMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			return d.ArgErr()
 		}
 
-		method, err := ParseAuthMethod(methodVal)
+		method, err := authenticator.ParseAuthMethod(methodVal)
 		if err != nil {
 			return err
 		}
@@ -301,10 +303,10 @@ func (m *MatchAuthMethod) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (m *MatchAuthMethod) MatchWithError(r *http.Request) (bool, error) {
-	authMethod, ok := r.Context().Value(AuthMethodCtxKey).(AuthMethod)
+	authMethod, ok := r.Context().Value(AuthMethodCtxKey).(authenticator.AuthMethod)
 	if !ok {
 		// If the auth method isn't set in the request context, default to none
-		authMethod = AuthMethodNone
+		authMethod = authenticator.AuthMethodNone
 	}
 
 	return slices.Contains(m.Match, authMethod), nil

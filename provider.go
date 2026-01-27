@@ -2,271 +2,165 @@ package caddy_oidc
 
 import (
 	"context"
-	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"net/url"
 	"time"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/gorilla/securecookie"
-	"github.com/hashicorp/go-retryablehttp"
+	"github.com/relvacode/caddy-oidc/authenticator"
+	"github.com/relvacode/caddy-oidc/request"
 	"go.uber.org/zap"
-	"go.uber.org/zap/exp/zapslog"
 	"golang.org/x/oauth2"
 )
 
-func init() {
-	caddy.RegisterModule(new(OIDCProviderModule))
+// oauth2Client is an interface for the oauth2 client.
+type oauth2Client interface {
+	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
+	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	Scopes() []string
+	ClientID() string
 }
 
-const (
-	// DefaultRedirectUriPath is the default redirect URI used for OAuth callback if none is specified.
-	DefaultRedirectUriPath = "/oauth2/callback"
-	// DefaultUsernameClaim is the default username claim to use if none is specified.
-	DefaultUsernameClaim = "sub"
+// oauth2ConfigWithHTTPClient wraps an oauth2.Config to inject an HTTP client instance for token exchange.
+type oauth2ConfigWithHTTPClient struct {
+	*oauth2.Config
+
+	httpClient *http.Client
+}
+
+func (c *oauth2ConfigWithHTTPClient) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
+
+	return c.Config.Exchange(ctx, code, opts...)
+}
+
+func (c *oauth2ConfigWithHTTPClient) Scopes() []string {
+	return c.Config.Scopes
+}
+
+func (c *oauth2ConfigWithHTTPClient) ClientID() string {
+	return c.Config.ClientID
+}
+
+type userInfoClient interface {
+	UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*oidc.UserInfo, error)
+}
+
+type providerDiscoveryConfiguration struct {
+	Verifier *oidc.IDTokenVerifier
+	UserInfo userInfoClient
+	OAuth2   oauth2Client
+}
+
+var (
+	_ authenticator.OIDCConfiguration                   = (*Provider)(nil)
+	_ authenticator.OAuthAuthorizationFlowConfiguration = (*Provider)(nil)
 )
 
-var _ caddy.Module = (*OIDCProviderModule)(nil)
-var _ caddy.Provisioner = (*OIDCProviderModule)(nil)
-var _ caddy.Validator = (*OIDCProviderModule)(nil)
-var _ caddyfile.Unmarshaler = (*OIDCProviderModule)(nil)
-
-// OIDCProviderModule holds the configuration for an OIDC provider.
-type OIDCProviderModule struct {
-	Issuer                    string                                  `json:"issuer"`
-	ClientID                  string                                  `json:"client_id"`
-	SecretKey                 string                                  `json:"secret_key"`
-	RedirectURI               string                                  `json:"redirect_uri,omitempty"`
-	TLSInsecureSkipVerify     bool                                    `json:"tls_insecure_skip_verify,omitempty"`
-	Cookie                    *Cookies                                `json:"cookie,omitempty"`
-	ProtectedResourceMetadata *ProtectedResourceMetadataConfiguration `json:"protected_resource_metadata,omitempty"`
-	Scope                     []string                                `json:"scope,omitempty"`
-	Username                  string                                  `json:"username,omitempty"`
-	Claims                    []string                                `json:"claims,omitempty"`
+// Provider holds the built configuration for an OIDC provider and authentication logic.
+type Provider struct {
+	Log               *zap.Logger
+	Clock             func() time.Time
+	Issuer            string
+	UsernameClaim     string
+	ProtectedResource *ProtectedResourceMetadataConfiguration
+	Authenticators    authenticator.Set
+	Discovery         *DeferredResult[*providerDiscoveryConfiguration]
 }
 
-func (*OIDCProviderModule) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  moduleID + ".provider",
-		New: func() caddy.Module { return new(OIDCProviderModule) },
-	}
-}
+func (pr *Provider) Now() time.Time           { return pr.Clock() }
+func (pr *Provider) GetUsernameClaim() string { return pr.UsernameClaim }
 
-// UnmarshalCaddyfile sets up the OIDCProviderModule instance from Caddyfile tokens.
-/*
-	{
-		issuer <issuer>
-		client_id <client_id>
-		redirect_uri [<redirect_uri>]
-		secret_key <secret_key>
-		tls_insecure_skip_verify
-		discovery_url <discovery_url>
-		scope [<scope>...]
-		username <username>
-		claim [<claim>...]
-		protected_resource <protected_resource>
-		cookie <cookie>
-	}
-*/
-func (m *OIDCProviderModule) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for nesting := d.Nesting(); d.NextBlock(nesting); {
-		switch d.Val() {
-		case "issuer":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.Issuer = d.Val()
-		case "client_id":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.ClientID = d.Val()
-		case "redirect_uri":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.RedirectURI = d.Val()
-		case "secret_key":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.SecretKey = d.Val()
-		case "cookie":
-			m.Cookie = new(Cookies)
-			*m.Cookie = DefaultCookieOptions() // Apply defaults
-
-			d.Prev()
-
-			err := m.Cookie.UnmarshalCaddyfile(d)
-			if err != nil {
-				return err
-			}
-		case "protected_resource_metadata":
-			m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
-
-			d.Prev()
-
-			err := m.ProtectedResourceMetadata.UnmarshalCaddyfile(d)
-			if err != nil {
-				return err
-			}
-		case "tls_insecure_skip_verify":
-			m.TLSInsecureSkipVerify = true
-		case "scope":
-			m.Scope = append(m.Scope, d.RemainingArgs()...)
-		case "username":
-			if !d.NextArg() {
-				return d.ArgErr()
-			}
-
-			m.Username = d.Val()
-		case "claim":
-			m.Claims = append(m.Claims, d.RemainingArgs()...)
-		default:
-			return d.Errf("unrecognized oidc subdirective '%s'", d.Val())
-		}
-	}
-
-	return nil
-}
-
-func (m *OIDCProviderModule) Provision(_ caddy.Context) error {
-	var repl = caddy.NewReplacer()
-
-	m.SecretKey = repl.ReplaceAll(m.SecretKey, "")
-
-	if m.Cookie == nil {
-		m.Cookie = new(Cookies)
-		*m.Cookie = DefaultCookieOptions()
-	}
-
-	if m.ProtectedResourceMetadata == nil {
-		m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
-	}
-
-	if m.Scope == nil {
-		m.Scope = []string{oidc.ScopeOpenID}
-	}
-
-	if m.Username == "" {
-		m.Username = DefaultUsernameClaim
-	}
-
-	if m.RedirectURI == "" {
-		m.RedirectURI = DefaultRedirectUriPath
-	}
-
-	return nil
-}
-
-func (m *OIDCProviderModule) Validate() error {
-	if m.Issuer == "" {
-		return errors.New("issuer cannot be empty")
-	}
-
-	if m.ClientID == "" {
-		return errors.New("client_id cannot be empty")
-	}
-
-	if m.SecretKey == "" {
-		return errors.New("secret_key cannot be empty")
-	}
-
-	if len(m.SecretKey) != 32 && len(m.SecretKey) != 64 {
-		return errors.New("secret_key must be 32 or 64 bytes")
-	}
-
-	if m.Username == "" {
-		return errors.New("username cannot be empty")
-	}
-
-	err := m.Cookie.Validate()
+func (pr *Provider) GetVerifier(ctx context.Context) (*oidc.IDTokenVerifier, error) {
+	discovery, err := pr.Discovery.Get(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return discovery.Verifier, nil
 }
 
-// setupHTTPClient creates a new HTTP client from provider configuration for communicating with the OIDC provider.
-func (m *OIDCProviderModule) setupHTTPClient(log *zap.Logger) *http.Client {
-	retryClient := retryablehttp.NewClient()
-	retryClient.Logger = slog.New(zapslog.NewHandler(log.Core(), zapslog.WithName(log.Name()), zapslog.WithCaller(false)))
-	retryClient.RetryMax = 5
-
-	// Copy the default settings from HTTP DefaultTransport
-	//nolint:forcetypeassert
-	retryClientTransport := http.DefaultTransport.(*http.Transport).Clone()
-	if m.TLSInsecureSkipVerify {
-		if retryClientTransport.TLSClientConfig == nil {
-			retryClientTransport.TLSClientConfig = new(tls.Config)
-		}
-
-		retryClientTransport.TLSClientConfig.InsecureSkipVerify = true
-	}
-
-	retryClient.HTTPClient = &http.Client{
-		Transport: retryClientTransport,
-	}
-
-	return retryClient.StandardClient()
-}
-
-// Create creates an Authenticator instance from this provider configuration.
-func (m *OIDCProviderModule) Create(ctx caddy.Context) (*Authenticator, error) {
-	redirectUri, err := url.Parse(m.RedirectURI)
+func (pr *Provider) AuthCodeURL(ctx context.Context, state string, opts ...oauth2.AuthCodeOption) (string, error) {
+	discovery, err := pr.Discovery.Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("invalid redirect_uri: %w", err)
+		return "", err
+	}
+
+	return discovery.OAuth2.AuthCodeURL(state, opts...), nil
+}
+
+func (pr *Provider) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+	discovery, err := pr.Discovery.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return discovery.OAuth2.Exchange(ctx, code, opts...)
+}
+
+func (pr *Provider) UserInfo(ctx context.Context, tokenSource oauth2.TokenSource) (*oidc.UserInfo, error) {
+	discovery, err := pr.Discovery.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return discovery.UserInfo.UserInfo(ctx, tokenSource)
+}
+
+// ProtectedResourceMetadata returns the OAuth protected resource metadata for this authenticator.
+// If protected resource metadata is not enabled, then false is returned.
+func (pr *Provider) ProtectedResourceMetadata(r *http.Request) (*OAuthProtectedResource, bool) {
+	if pr.ProtectedResource.Disable {
+		return nil, false
+	}
+
+	discovery, err := pr.Discovery.Get(r.Context())
+	if err != nil {
+		return nil, false
 	}
 
 	var (
-		log        = ctx.Logger(m)
-		httpClient = m.setupHTTPClient(log)
-		authorizer = &Authenticator{
-			log:               log,
-			redirectUri:       redirectUri,
-			uid:               m.Username,
-			claims:            m.Claims,
-			clock:             time.Now,
-			cookies:           securecookie.New([]byte(m.SecretKey), []byte(m.SecretKey)),
-			cookie:            m.Cookie,
-			protectedResource: m.ProtectedResourceMetadata,
-			issuer:            m.Issuer,
+		requestURL = request.URL(r)
+		metadata   = &OAuthProtectedResource{
+			Resource:        fmt.Sprintf("%s://%s", requestURL.Scheme, requestURL.Host),
+			ScopesSupported: discovery.OAuth2.Scopes(),
+			AuthorizationServers: []string{
+				pr.Issuer,
+			},
+			// OIDC middleware only supports bearer authentication via the Authorization header
+			BearerMethodsSupported: []string{
+				"header",
+			},
 		}
 	)
 
-	providerCtx := context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-
-	provider, err := oidc.NewProvider(providerCtx, m.Issuer)
-	if err != nil {
-		return nil, fmt.Errorf("oidc discovery failed: %w", err)
+	if pr.ProtectedResource.Audience {
+		metadata.Audience = discovery.OAuth2.ClientID()
 	}
 
-	authorizer.log.Debug("OIDC provider discovery successful", zap.Any("discovery", provider.Endpoint()))
+	return metadata, true
+}
 
-	authorizer.verifier = provider.Verifier(&oidc.Config{
-		ClientID: m.ClientID,
-		Now:      authorizer.clock,
-	})
+// WellKnownOAuthProtectedResourcePath is the path for the OAuth protected resource metadata endpoint.
+const WellKnownOAuthProtectedResourcePath = "/.well-known/oauth-protected-resource"
 
-	authorizer.userInfo = provider
-	authorizer.oauth2 = &oauth2ConfigWithHTTPClient{
-		httpClient: httpClient,
-		Config: &oauth2.Config{
-			ClientID: m.ClientID,
-			Endpoint: provider.Endpoint(),
-			Scopes:   m.Scope,
-		},
+// ServeHTTPOAuthProtectedResource returns the OAuth protected resource metadata for the endpoint
+// .well-known/oauth-protected-resource.
+// If the endpoint is disabled, then a 404 not found response is returned.
+func (pr *Provider) ServeHTTPOAuthProtectedResource(rw http.ResponseWriter, r *http.Request) error {
+	metadata, ok := pr.ProtectedResourceMetadata(r)
+	if !ok {
+		return caddyhttp.Error(http.StatusNotFound, errors.New("protected resource metadata is disabled"))
 	}
 
-	return authorizer, nil
+	rw.Header().Set("Content-Type", "application/json")
+	rw.WriteHeader(http.StatusOK)
+
+	enc := json.NewEncoder(rw)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(metadata)
 }

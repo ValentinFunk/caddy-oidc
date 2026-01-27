@@ -1,4 +1,4 @@
-package caddy_oidc
+package session
 
 import (
 	"testing"

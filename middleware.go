@@ -11,6 +11,9 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/relvacode/caddy-oidc/authenticator"
+	"github.com/relvacode/caddy-oidc/request"
+	"github.com/relvacode/caddy-oidc/session"
 	"github.com/tidwall/gjson"
 )
 
@@ -41,10 +44,9 @@ var _ caddyhttp.MiddlewareHandler = (*OIDCMiddleware)(nil)
 // OIDCMiddleware is a middleware that authenticates and authorizes requests based on configured rules.
 // It's associated with a separately configured OIDC provider by name.
 type OIDCMiddleware struct {
-	Provider string  `json:"provider"`
-	Policies Ruleset `json:"policies"`
-
-	au *DeferredResult[*Authenticator]
+	ProviderName string    `json:"provider"`
+	Policies     Ruleset   `json:"policies"`
+	Provider     *Provider `json:"-"`
 }
 
 func (mw *OIDCMiddleware) CaddyModule() caddy.ModuleInfo {
@@ -68,7 +70,7 @@ func (mw *OIDCMiddleware) UnmarshalCaddyfile(dis *caddyfile.Dispenser) error {
 			return dis.ArgErr()
 		}
 
-		mw.Provider = dis.Val()
+		mw.ProviderName = dis.Val()
 
 		err := mw.Policies.UnmarshalCaddyfile(dis)
 		if err != nil {
@@ -90,12 +92,12 @@ func (mw *OIDCMiddleware) Provision(ctx caddy.Context) error {
 
 	app := val.(*App) //nolint:forcetypeassert
 
-	au, ok := app.provided[mw.Provider]
+	pr, ok := app.provided[mw.ProviderName]
 	if !ok {
-		return fmt.Errorf("oidc provider '%s' not configured", mw.Provider)
+		return fmt.Errorf("oidc provider '%s' not configured", mw.ProviderName)
 	}
 
-	mw.au = au
+	mw.Provider = pr
 
 	err = mw.Policies.Provision(ctx)
 	if err != nil {
@@ -110,7 +112,7 @@ func (mw *OIDCMiddleware) Validate() error {
 	return mw.Policies.Validate()
 }
 
-func (*OIDCMiddleware) setReplacerVars(repl *caddy.Replacer, session *Session, authMethod AuthMethod) {
+func (*OIDCMiddleware) setReplacerVars(repl *caddy.Replacer, session *session.Session, authMethod authenticator.AuthMethod) {
 	repl.Set("http.auth.method", authMethod.String())
 	repl.Set("http.auth.user.anonymous", session.Anonymous)
 
@@ -144,33 +146,32 @@ func (*OIDCMiddleware) setReplacerVars(repl *caddy.Replacer, session *Session, a
 // interceptRequest intercepts the request and performs authentication and authorization checks.
 // If returns "true" if the request was handled and a response was written.
 func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Request) (bool, error) {
-	au, err := mw.au.Get(r.Context())
-	if err != nil {
-		return false, err
-	}
-
-	// Check if the request is an OAuth callback
-	if r.Method == http.MethodGet && r.URL.Path == au.redirectUri.Path {
-		return true, au.HandleCallback(rw, r)
+	// Check if the request is an OAuth callback.
+	// Only supported if there is a session cookie authenticator configuration.
+	if r.Method == http.MethodGet {
+		cookie, ok := authenticator.GetAuthenticator[*authenticator.SessionCookieAuthenticator](&mw.Provider.Authenticators)
+		if ok && cookie.IsCallbackURL(r) {
+			return true, cookie.HandleCallback(mw.Provider, rw, r)
+		}
 	}
 
 	// Check for supported well-knowns
 	if r.Method == http.MethodGet && r.URL.Path == WellKnownOAuthProtectedResourcePath {
-		return true, au.ServeHTTPOAuthProtectedResource(rw, r)
+		return true, mw.Provider.ServeHTTPOAuthProtectedResource(rw, r)
 	}
 
-	authMethod, session, err := au.Authenticate(r)
+	authMethod, s, err := mw.Provider.Authenticators.AuthenticateRequest(mw.Provider, r)
 	if err != nil {
 		return false, err
 	}
 
 	// Set replacer vars
 	if repl, ok := r.Context().Value(caddy.ReplacerCtxKey).(*caddy.Replacer); ok {
-		mw.setReplacerVars(repl, session, authMethod)
+		mw.setReplacerVars(repl, s, authMethod)
 	}
 
 	// Inject context vars
-	ctx := context.WithValue(r.Context(), SessionCtxKey, session)
+	ctx := context.WithValue(r.Context(), SessionCtxKey, s)
 	ctx = context.WithValue(ctx, AuthMethodCtxKey, authMethod)
 
 	r = r.WithContext(ctx)
@@ -192,14 +193,17 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 	case EvaluationResultImplicitDeny:
 		// If the evaluation result is an implicit reject, then check if the session is anonymous.
 		// If anonymous:
-		//		Start the authorization flow if the request is likely coming from a browser.
+		//		Start the authorization flow if the request is likely coming from a browser (if session cookies are enabled).
 		//		Otherwise, return a 401 Unauthorized error.
-		if session.Anonymous {
-			if ShouldStartLogin(r) {
-				return true, au.StartLogin(rw, r)
+		if s.Anonymous {
+			if r.Method == http.MethodGet && request.IsBrowserInteractive(r) {
+				cookie, ok := authenticator.GetAuthenticator[*authenticator.SessionCookieAuthenticator](&mw.Provider.Authenticators)
+				if ok {
+					return true, cookie.StartLogin(mw.Provider, rw, r)
+				}
 			}
 
-			if rs, ok := au.ProtectedResourceMetadata(r); ok {
+			if rs, ok := mw.Provider.ProtectedResourceMetadata(r); ok {
 				rw.Header().Set("WWW-Authenticate", rs.WWWAuthenticate())
 			}
 

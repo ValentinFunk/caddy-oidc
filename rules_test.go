@@ -10,6 +10,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/relvacode/caddy-oidc/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +40,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		session *Session
+		session *session.Session
 		expect  EvaluationResult
 	}{
 		{
@@ -47,7 +48,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 			input: `{
 				allow { }
 			}`,
-			session: &Session{
+			session: &session.Session{
 				UID: "test",
 			},
 			expect: EvaluationResultImplicitDeny,
@@ -59,7 +60,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					path /foo
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				UID: "test",
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -72,7 +73,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					user steve@example.com
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				UID: "steve@example.com",
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -85,7 +86,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					path /foo
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Anonymous: true,
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -98,7 +99,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					path /bar
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Anonymous: true,
 			},
 			expect: EvaluationResultImplicitDeny,
@@ -110,7 +111,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					claim sub steve@example.com
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -122,7 +123,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					claim sub bob@example.com steve@example.com
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -135,7 +136,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					claim role write
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Claims: json.RawMessage(`{"role": ["read": "write"]}`),
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -147,7 +148,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					claim sub *@example.com
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Claims: json.RawMessage(`{"sub": "steve@example.com"}`),
 			},
 			expect: EvaluationResultExplicitDeny,
@@ -159,7 +160,7 @@ func TestRuleset_Evaluate(t *testing.T) {
 					claim host {http.host}
 				}
 			}`,
-			session: &Session{
+			session: &session.Session{
 				Claims: json.RawMessage(`{"host": "example.com"}`),
 			},
 			expect: EvaluationResultExplicitDeny,
