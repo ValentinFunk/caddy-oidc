@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -62,15 +63,11 @@ type Set struct {
 	PreserveRequest   bool                   `json:"preserve_request,omitzero"`
 }
 
-// NewDefaultSet returns the default set of authenticators.
-func NewDefaultSet() *Set {
-	return &Set{
-		AuthenticatorsRaw: []json.RawMessage{
-			json.RawMessage(`{"authenticator": "bearer"}`),
-			json.RawMessage(`{"authenticator": "cookie"}`),
-			json.RawMessage(`{"authenticator": "none"}`),
-		},
-	}
+// Default returns the JSON configuration for the default set of authenticators.
+var defaults = []json.RawMessage{
+	json.RawMessage(`{"authenticator": "bearer"}`),
+	json.RawMessage(`{"authenticator": "cookie"}`),
+	json.RawMessage(`{"authenticator": "none"}`),
 }
 
 func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -86,6 +83,11 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		switch directive {
 		case "preserve_request":
 			set.PreserveRequest = true
+
+			continue
+
+		case "default":
+			set.AuthenticatorsRaw = append(set.AuthenticatorsRaw, defaults...)
 
 			continue
 		}
@@ -121,6 +123,10 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (set *Set) Provision(ctx caddy.Context) error {
+	if len(set.AuthenticatorsRaw) == 0 {
+		set.AuthenticatorsRaw = slices.Clone(defaults)
+	}
+
 	modules, err := ctx.LoadModule(set, "AuthenticatorsRaw")
 	if err != nil {
 		return err

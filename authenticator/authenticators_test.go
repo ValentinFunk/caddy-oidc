@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -17,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuthenticatorSet_UnmarshalCaddyfile(t *testing.T) {
+func TestSet_UnmarshalCaddyfile(t *testing.T) {
 	t.Parallel()
 
 	var dis = caddyfile.NewTestDispenser(`
@@ -47,7 +48,7 @@ func TestAuthenticatorSet_UnmarshalCaddyfile(t *testing.T) {
 	assert.True(t, authenticatorSet.PreserveRequest)
 }
 
-func TestAuthenticatorSet_Provision(t *testing.T) {
+func TestSet_Provision(t *testing.T) {
 	t.Parallel()
 
 	var authenticatorSet = &Set{
@@ -64,6 +65,33 @@ func TestAuthenticatorSet_Provision(t *testing.T) {
 
 	if assert.Len(t, authenticatorSet.Authenticators, 1) {
 		_, ok := authenticatorSet.Authenticators[0].(*BearerAuthenticator)
+		assert.True(t, ok)
+	}
+}
+
+func TestSet_Provision_Default(t *testing.T) {
+	t.Parallel()
+
+	var set Set
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	// Session cookie defaults to using environment for the secret
+	os.Setenv("COOKIE_SECRET", "EuwIOjyhBALGPLJywDkjcT2PUqbDr0Bz")
+	defer os.Unsetenv("COOKIE_SECRET")
+
+	err := set.Provision(ctx)
+	require.NoError(t, err)
+
+	if assert.Len(t, set.Authenticators, 3) {
+		_, ok := set.Authenticators[0].(*BearerAuthenticator)
+		assert.True(t, ok)
+
+		_, ok = set.Authenticators[1].(*SessionCookieAuthenticator)
+		assert.True(t, ok)
+
+		_, ok = set.Authenticators[2].(*NoneAuthenticator)
 		assert.True(t, ok)
 	}
 }
