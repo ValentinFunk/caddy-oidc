@@ -1,3 +1,4 @@
+// Package request provides utilities for working with HTTP requests.
 package request
 
 import (

@@ -30,6 +30,9 @@ linters:
       - linters:
           - godot
         source: "// ENUM"
+      - linters:
+          - revive
+        text: "var-naming: don't use an underscore in package name"
   settings:
     varnamelen:
       ignore-names:

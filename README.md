@@ -78,7 +78,15 @@ When a request requires authentication, authentication methods are tried in the 
 The first authenticator to return a valid session from the request is used.
 An expired session is ignored, and the next authenticator is tried.
 
-The default configuration is shown below. These authenticators are not used if any authenticator is configured.
+#### Defaults
+
+To use the default set of authenticators, omit any authenticator **or** use the `default` option.
+
+```caddyfile
+authenticate default
+```
+
+The default configuration is equivalent to the following. Omitting any authenticator will use the default configuration.
 
 ```caddyfile
 authenticate bearer
@@ -87,6 +95,12 @@ authenticate cookie {
 }
 authenticate none
 ```
+
+> [!NOTE]
+> Configuring any `authenticate` handlers will override the default configuration. Use the `default` option to include
+> the default configuration.
+
+#### Forwarding Authentication
 
 By default, any authentication information from any configured authenticator
 is stripped from the request before passing it upstream.
@@ -100,6 +114,10 @@ authenticate preserve_request
 
 The `bearer` authenticator is used to authenticate requests using a JWT bearer token.
 The bearer JWT must be signed by the OIDC provider.
+
+```caddyfile
+authenticate bearer
+```
 
 #### Cookie
 
@@ -146,6 +164,10 @@ The `none` authenticator always passes authentication by returning an anonymous 
 
 > [!NOTE]
 > A `none` authenticator should always be the last configured authenticator.
+
+```caddyfile
+authenticate none
+```
 
 #### Header
 

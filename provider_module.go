@@ -114,10 +114,6 @@ func (m *OIDCProviderModule) Provision(ctx caddy.Context) error {
 		m.ProtectedResourceMetadata = new(ProtectedResourceMetadataConfiguration)
 	}
 
-	if m.Authenticators == nil {
-		m.Authenticators = authenticator.NewDefaultSet()
-	}
-
 	err := m.Authenticators.Provision(ctx)
 	if err != nil {
 		return err

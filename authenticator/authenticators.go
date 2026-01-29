@@ -1,3 +1,6 @@
+// Package authenticator provides a modular plugin interface
+// for providing authentication mechanisms to the caddy-oidc plugin.
+// Including a built-in set of authenticators for working with most authentication sources from HTTP requests.
 package authenticator
 
 import (
@@ -6,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -62,15 +66,13 @@ type Set struct {
 	PreserveRequest   bool                   `json:"preserve_request,omitzero"`
 }
 
-// NewDefaultSet returns the default set of authenticators.
-func NewDefaultSet() *Set {
-	return &Set{
-		AuthenticatorsRaw: []json.RawMessage{
-			json.RawMessage(`{"authenticator": "bearer"}`),
-			json.RawMessage(`{"authenticator": "cookie"}`),
-			json.RawMessage(`{"authenticator": "none"}`),
-		},
-	}
+// Default returns the JSON configuration for the default set of authenticators.
+//
+//nolint:gochecknoglobals
+var defaults = []json.RawMessage{
+	json.RawMessage(`{"authenticator": "bearer"}`),
+	json.RawMessage(`{"authenticator": "cookie"}`),
+	json.RawMessage(`{"authenticator": "none"}`),
 }
 
 func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -82,10 +84,14 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 		directive := d.Val()
 
-		//nolint:gocritic
 		switch directive {
 		case "preserve_request":
 			set.PreserveRequest = true
+
+			continue
+
+		case "default":
+			set.AuthenticatorsRaw = append(set.AuthenticatorsRaw, defaults...)
 
 			continue
 		}
@@ -121,6 +127,10 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 }
 
 func (set *Set) Provision(ctx caddy.Context) error {
+	if len(set.AuthenticatorsRaw) == 0 {
+		set.AuthenticatorsRaw = slices.Clone(defaults)
+	}
+
 	modules, err := ctx.LoadModule(set, "AuthenticatorsRaw")
 	if err != nil {
 		return err

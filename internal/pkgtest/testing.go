@@ -1,3 +1,4 @@
+// Package pkgtest provides utilities for testing.
 package pkgtest
 
 import (
