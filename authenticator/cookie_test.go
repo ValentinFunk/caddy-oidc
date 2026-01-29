@@ -116,12 +116,12 @@ func TestSessionCookieAuthenticator_GetAbsRedirectUri(t *testing.T) {
 			require.NoError(t, err)
 
 			var au = &SessionCookieAuthenticator{
-				redirectUrl: u,
+				redirectURL: u,
 			}
 
 			r := httptest.NewRequest(http.MethodGet, "http://example.com/auth?bar=baz#xyz", nil)
 
-			assert.Equal(t, tt.expect, au.GetAbsRedirectUri(r).String())
+			assert.Equal(t, tt.expect, au.GetAbsRedirectURI(r).String())
 		})
 	}
 }

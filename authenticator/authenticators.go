@@ -1,3 +1,6 @@
+// Package authenticator provides a modular plugin interface
+// for providing authentication mechanisms to the caddy-oidc plugin.
+// Including a built-in set of authenticators for working with most authentication sources from HTTP requests.
 package authenticator
 
 import (
@@ -64,6 +67,8 @@ type Set struct {
 }
 
 // Default returns the JSON configuration for the default set of authenticators.
+//
+//nolint:gochecknoglobals
 var defaults = []json.RawMessage{
 	json.RawMessage(`{"authenticator": "bearer"}`),
 	json.RawMessage(`{"authenticator": "cookie"}`),
@@ -79,7 +84,6 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for nesting := d.Nesting(); d.NextArg() || d.NextBlock(nesting); {
 		directive := d.Val()
 
-		//nolint:gocritic
 		switch directive {
 		case "preserve_request":
 			set.PreserveRequest = true

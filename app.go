@@ -1,3 +1,4 @@
+// Package caddy_oidc is a Caddy plugin for providing authentication and authorization using an OIDC IdP
 package caddy_oidc
 
 import (
@@ -10,7 +11,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 
-	_ "github.com/relvacode/caddy-oidc/authenticator"
+	_ "github.com/relvacode/caddy-oidc/authenticator" // Registers the built-in authenticator modules
 )
 
 const moduleID = "oidc"

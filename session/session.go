@@ -1,3 +1,4 @@
+// Package session contains types and functions for working with authentication sessions.
 package session
 
 import (

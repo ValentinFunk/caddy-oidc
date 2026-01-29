@@ -31,7 +31,7 @@ func (testOAuthClientImpl) AuthCodeURL(state string, opts ...oauth2.AuthCodeOpti
 	return oConfig.AuthCodeURL(state, opts...)
 }
 
-func (testOAuthClientImpl) Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+func (testOAuthClientImpl) Exchange(_ context.Context, _ string, _ ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	return nil, errors.New("token exchange not supported in test")
 }
 

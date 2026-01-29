@@ -38,8 +38,8 @@ const (
 	defaultRedirectURL  = "/oauth2/callback"
 )
 
-// ErrNoIdToken is returned when an OAuth2 code exchange response does not contain an ID token.
-var ErrNoIdToken = errors.New("authentication server did not return an ID token")
+// ErrNoIDToken is returned when an OAuth2 code exchange response does not contain an ID token.
+var ErrNoIDToken = errors.New("authentication server did not return an ID token")
 
 // OAuthAuthorizationFlowConfiguration represents the configuration required
 // to implement an OAuth2 Authorization Code Flow.
@@ -55,7 +55,7 @@ type OAuthAuthorizationFlowConfiguration interface {
 // ENUM(lax, strict, none)
 type SameSite string
 
-func (ss SameSite) HttpSameSite() http.SameSite {
+func (ss SameSite) HTTPSameSite() http.SameSite {
 	switch ss {
 	case SameSiteLax:
 		return http.SameSiteLaxMode
@@ -88,7 +88,7 @@ type SessionCookieAuthenticator struct {
 	RedirectURL string   `json:"redirect_url,omitempty"`
 
 	secure      *securecookie.SecureCookie
-	redirectUrl *url.URL
+	redirectURL *url.URL
 }
 
 func (*SessionCookieAuthenticator) CaddyModule() caddy.ModuleInfo {
@@ -213,7 +213,7 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 		return err
 	}
 
-	au.redirectUrl, err = url.Parse(au.RedirectURL)
+	au.redirectURL, err = url.Parse(au.RedirectURL)
 	if err != nil {
 		return fmt.Errorf("invalid redirect_url: %w", err)
 	}
@@ -264,7 +264,7 @@ func (au *SessionCookieAuthenticator) NewCookie(value string) *http.Cookie {
 	return &http.Cookie{
 		Name:     au.Name,
 		Value:    value,
-		SameSite: au.SameSite.HttpSameSite(),
+		SameSite: au.SameSite.HTTPSameSite(),
 		Path:     au.Path,
 		Domain:   au.Domain,
 		HttpOnly: true,
@@ -278,13 +278,13 @@ type CSRFToken struct {
 	RedirectURI  string `json:"r"`
 }
 
-// GetAbsRedirectUri returns the absolute redirect URI, resolving it relative to the request URL if necessary.
-func (au *SessionCookieAuthenticator) GetAbsRedirectUri(r *http.Request) *url.URL {
-	if au.redirectUrl.IsAbs() {
-		return au.redirectUrl
+// GetAbsRedirectURI returns the absolute redirect URI, resolving it relative to the request URL if necessary.
+func (au *SessionCookieAuthenticator) GetAbsRedirectURI(r *http.Request) *url.URL {
+	if au.redirectURL.IsAbs() {
+		return au.redirectURL
 	}
 
-	return request.URL(r).ResolveReference(au.redirectUrl)
+	return request.URL(r).ResolveReference(au.redirectURL)
 }
 
 // StartLogin starts the authorization flow by setting the state cookie and redirecting to the authorization endpoint.
@@ -309,15 +309,15 @@ func (au *SessionCookieAuthenticator) StartLogin(cfg OAuthAuthorizationFlowConfi
 
 	http.SetCookie(rw, csrfCookie)
 
-	authCodeUrl, err := cfg.AuthCodeURL(r.Context(), state,
+	authCodeURL, err := cfg.AuthCodeURL(r.Context(), state,
 		oauth2.S256ChallengeOption(pkceVerifier),
-		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectUri(r).String()),
+		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectURI(r).String()),
 	)
 	if err != nil {
 		return err
 	}
 
-	http.Redirect(rw, r, authCodeUrl, http.StatusFound)
+	http.Redirect(rw, r, authCodeURL, http.StatusFound)
 
 	return nil
 }
@@ -358,7 +358,7 @@ func (au *SessionCookieAuthenticator) handleCodeExchange(
 ) (*oidc.UserInfo, time.Time, error) {
 	response, err := cfg.Exchange(r.Context(), r.FormValue("code"),
 		oauth2.VerifierOption(pkceVerifier),
-		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectUri(r).String()),
+		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectURI(r).String()),
 	)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("failed to exchange token: %w", err)
@@ -366,7 +366,7 @@ func (au *SessionCookieAuthenticator) handleCodeExchange(
 
 	idTokenPlain, ok := response.Extra("id_token").(string)
 	if !ok {
-		return nil, time.Time{}, ErrNoIdToken
+		return nil, time.Time{}, ErrNoIDToken
 	}
 
 	verifier, err := cfg.GetVerifier(r.Context())
@@ -393,7 +393,7 @@ func (au *SessionCookieAuthenticator) handleCodeExchange(
 func (au *SessionCookieAuthenticator) IsCallbackURL(r *http.Request) bool {
 	var (
 		req      = request.URL(r)
-		redirect = au.GetAbsRedirectUri(r)
+		redirect = au.GetAbsRedirectURI(r)
 	)
 
 	return req.Scheme == redirect.Scheme && req.Host == redirect.Host && req.Path == redirect.Path
@@ -423,13 +423,13 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 		return fmt.Errorf("failed to extract claims from user info: %w", err)
 	}
 
-	uidJson := gjson.GetBytes(*jsonClaims, cfg.GetUsernameClaim())
-	if !uidJson.Exists() || uidJson.Type != gjson.String {
+	uidJSON := gjson.GetBytes(*jsonClaims, cfg.GetUsernameClaim())
+	if !uidJSON.Exists() || uidJSON.Type != gjson.String {
 		return fmt.Errorf("invalid response from user info endpoint: %w", session.MissingRequiredClaimError{Claim: cfg.GetUsernameClaim()})
 	}
 
 	s := &session.Session{
-		UID:       uidJson.String(),
+		UID:       uidJSON.String(),
 		Claims:    json.RawMessage(`{}`),
 		ExpiresAt: idTokenExpires.Unix(),
 	}
@@ -453,12 +453,12 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	http.SetCookie(rw, au.NewCookie(cookieValue))
 
 	// Redirect to the configured redirect URI
-	var redirectUri = csrfToken.RedirectURI
-	if redirectUri == "" {
-		redirectUri = "/" // Fall back to root
+	var redirectURI = csrfToken.RedirectURI
+	if redirectURI == "" {
+		redirectURI = "/" // Fall back to root
 	}
 
-	http.Redirect(rw, r, redirectUri, http.StatusFound)
+	http.Redirect(rw, r, redirectURI, http.StatusFound)
 
 	return nil
 }

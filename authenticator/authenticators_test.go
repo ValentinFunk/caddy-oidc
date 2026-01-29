@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -70,16 +69,13 @@ func TestSet_Provision(t *testing.T) {
 }
 
 func TestSet_Provision_Default(t *testing.T) {
-	t.Parallel()
-
 	var set Set
 
 	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
 	defer cancel()
 
 	// Session cookie defaults to using environment for the secret
-	os.Setenv("COOKIE_SECRET", "EuwIOjyhBALGPLJywDkjcT2PUqbDr0Bz")
-	defer os.Unsetenv("COOKIE_SECRET")
+	t.Setenv("COOKIE_SECRET", "EuwIOjyhBALGPLJywDkjcT2PUqbDr0Bz")
 
 	err := set.Provision(ctx)
 	require.NoError(t, err)
