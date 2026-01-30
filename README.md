@@ -91,7 +91,8 @@ The default configuration is equivalent to the following
 ```caddyfile
 authenticate bearer
 authenticate cookie {
-    # Inherits the default cookie configuration
+    name caddy
+    secret "{env.COOKIE_SECRET}"
 }
 ```
 
@@ -101,7 +102,7 @@ authenticate cookie {
 
 #### Require Authentication
 
-By default, authentication is optional. 
+By default, authentication is optional.
 This allows access rules to determine the action to take when a request is not authenticated.
 
 This also allows automatic redirection to the OIDC provider for authentication when the request is made by a browser.
@@ -140,40 +141,34 @@ authenticate bearer
 
 The `cookie` authenticator is used to authenticate requests using a self-signed session cookie.
 
-Enabling session cookie authentication also enables interactive authentication through
-the browser via the OAuth 2.0 Authorization Code Flow.
+| Option         | Description                                                                                                                                                 | Default            |
+|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
+| `name`         | The name of the cookie.                                                                                                                                     |                    |
+| `secret`       | The 32 or 64 byte secret key to encrypt session cookies                                                                                                     |                    |
+| `domain`       | (optional) The domain of the cookie.                                                                                                                        |                    |
+| `path`         | (optional) The path of the cookie.                                                                                                                          | `/`                |
+| `insecure`     | (optional) Disable secure cookies.                                                                                                                          |                    |
+| `same_site`    | (optional) The samesite mode of the cookie. One of `lax`, `strict` or `none`                                                                                |                    |
+| `claims`       | (optional) Claims to copy into the session cookie.                                                                                                          |                    |
+| `redirect_url` | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. | `/oauth2/callback` |
 
-When enabled, if the request is not authenticated, the request is made by a browser,
-and there is no matching explicit `allow` or `deny` rule,
-then the browser will be redirected to the OIDC provider for login.
-
-| Option         | Description                                                                                                                                                 |
-|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `name`         | The name of the cookie.                                                                                                                                     |
-| `secret`       | The 32 or 64 byte secret key to encrypt session cookies                                                                                                     |
-| `domain`       | (optional) The domain of the cookie.                                                                                                                        |
-| `path`         | (optional) The path of the cookie.                                                                                                                          |
-| `insecure`     | (optional) Disable secure cookies.                                                                                                                          |
-| `same_site`    | (optional) The samesite mode of the cookie. One of `lax`, `strict` or `none`                                                                                |
-| `claims`       | (optional) Claims to copy into the session cookie.                                                                                                          |
-| `redirect_url` | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. |
-
-The default configuration is shown below.
-Any individual option can be overridden whilst preserving the default values for options not specified.
-
-```caddyfile
-authenticate cookie {
-    name caddy
-    same_site lax
-    path /
-    secret {env.COOKIE_SECRET}
-    redirect_url /oauth2/callback
-}
-```
 
 To minimize the size of the cookie, no claims are copied into the session cookie by default.
 Claims can be copied by specifying the `claims` option if needed for access policy rules or placeholder variables (e.g.,
 for logging).
+
+Enabling session cookie authentication also enables interactive authentication through
+the browser via the OAuth 2.0 Authorization Code Flow.
+
+Automatic redirection to the OIDC provider for login happens when all the following conditions are met:
+
+- A session cookie authenticator is configured
+- The request is not authenticated
+- Authentication is not required
+- There is no matching explicit `allow` or `deny` rule
+- The request is made by a browser, determined by:
+    - `Sec-Fetch-Dest` is `document` or `iframe`
+    - `Accept` header contains `text/html`
 
 #### Header
 

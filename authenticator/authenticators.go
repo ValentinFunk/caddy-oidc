@@ -72,7 +72,7 @@ type Set struct {
 //nolint:gochecknoglobals
 var defaults = []json.RawMessage{
 	json.RawMessage(`{"authenticator": "bearer"}`),
-	json.RawMessage(`{"authenticator": "cookie"}`),
+	json.RawMessage(`{"authenticator": "cookie", "name": "caddy", "secret": "{env.COOKIE_SECRET}"}`),
 }
 
 func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
