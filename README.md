@@ -39,7 +39,7 @@ The global directive is used to configure the OIDC provider. An example minimum 
 {
     oidc example {
         issuer https://accounts.google.com
-        client_id < client_id >
+        client_id "<client_id>"
     }
 }
 ```
@@ -86,19 +86,36 @@ To use the default set of authenticators, omit any authenticator **or** use the 
 authenticate default
 ```
 
-The default configuration is equivalent to the following. Omitting any authenticator will use the default configuration.
+The default configuration is equivalent to the following
 
 ```caddyfile
 authenticate bearer
 authenticate cookie {
     # Inherits the default cookie configuration
 }
-authenticate none
 ```
 
 > [!NOTE]
 > Configuring any `authenticate` handlers will override the default configuration. Use the `default` option to include
 > the default configuration.
+
+#### Require Authentication
+
+By default, authentication is optional. 
+This allows access rules to determine the action to take when a request is not authenticated.
+
+This also allows automatic redirection to the OIDC provider for authentication when the request is made by a browser.
+
+You can disable this behavior by adding the `required` option. When enabled, any request that is not authenticated will
+result in a `401 Unauthorized` response before evaluating access policy rules.
+
+> [!NOTE]
+> It's recommended to leave this option disabled and use access rules to determine the action to take when a request is
+> not authenticated.
+
+```caddyfile
+authenticate required
+```
 
 #### Forwarding Authentication
 
@@ -157,17 +174,6 @@ authenticate cookie {
 To minimize the size of the cookie, no claims are copied into the session cookie by default.
 Claims can be copied by specifying the `claims` option if needed for access policy rules or placeholder variables (e.g.,
 for logging).
-
-#### None
-
-The `none` authenticator always passes authentication by returning an anonymous session.
-
-> [!NOTE]
-> A `none` authenticator should always be the last configured authenticator.
-
-```caddyfile
-authenticate none
-```
 
 #### Header
 
@@ -261,7 +267,7 @@ Additional [HTTP matchers](#http-matchers) are provided for authentication-speci
 
 > [!CAUTION]
 > Without an explicit [user](#user) match in an `allow` policy rule, all requests will be allowed, even anonymous
-> requests.
+> request unless `authenticate required` is enabled.
 
 If a request matches any `deny` rule then the request is denied, even if another `allow` rule matches.
 
@@ -431,9 +437,11 @@ Matches the authentication method used to authenticate the request.
 
 Possible values are
 
-- `none` - The request is not authenticated
 - `cookie` - The request was authenticated using a session cookie
 - `bearer` - The request was authenticated using a bearer JWT token
+- `header` - The request was authenticated using a JWT token passed in an HTTP header
+- `query` - The request was authenticated using a JWT token passed in a query parameter
+- `none` - The request was not authenticated
 
 ```caddyfile
 # Deny all requests using JWT bearer authentication
@@ -448,14 +456,14 @@ deny {
 When a request passes through the `oidc` handler, the
 following [placeholder](https://caddyserver.com/docs/conventions#placeholders) variables are available:
 
-| Placeholder                | Description                                                                            |
-|----------------------------|----------------------------------------------------------------------------------------|
-| `http.auth.user.id`        | The username extracted from the `username` option of the global directive              |
-| `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                           |
-| `http.auth.method`         | The authentication method of the request. One of `none`, `cookie` or `bearer`          |
-| `http.auth.user.claim.*`   | Set for each claim provided by the matched authenticator                               |
-| `http.auth.rule`           | The named access policy rule that matched the request                                  |
-| `http.auth.result`         | The acccess rule evaluation result. One of `allow`, `implicit deny` or `explicit deny` |
+| Placeholder                | Description                                                                                 |
+|----------------------------|---------------------------------------------------------------------------------------------|
+| `http.auth.user.id`        | The username extracted from the `username` option of the global directive                   |
+| `http.auth.user.anonymous` | `true` if the session is not authenticated otherwise `false`                                |
+| `http.auth.method`         | The authentication method of the request. One of the available [auth methods](#auth-method) |
+| `http.auth.user.claim.*`   | Set for each claim provided by the matched authenticator                                    |
+| `http.auth.rule`           | The named access policy rule that matched the request                                       |
+| `http.auth.result`         | The acccess rule evaluation result. One of `allow`, `implicit deny` or `explicit deny`      |
 
 Because the `oidc` handler is ordered after the `header` handler, to set these variables in response headers, you must
 use the `defer` option

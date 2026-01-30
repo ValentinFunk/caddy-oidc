@@ -22,11 +22,11 @@ func TestSet_UnmarshalCaddyfile(t *testing.T) {
 
 	var dis = caddyfile.NewTestDispenser(`
 		authenticate bearer
-		authenticate none
 		authenticate header X-Api-Key
 		authenticate header X-Access-Token
 		authenticate query api-key
 		authenticate preserve_request
+		authenticate required
 	`)
 
 	var authenticatorSet Set
@@ -38,13 +38,13 @@ func TestSet_UnmarshalCaddyfile(t *testing.T) {
 
 	assert.Equal(t, []json.RawMessage{
 		json.RawMessage(`{"authenticator":"bearer"}`),
-		json.RawMessage(`{"authenticator":"none"}`),
 		json.RawMessage(`{"header":"X-Api-Key","authenticator":"header"}`),
 		json.RawMessage(`{"header":"X-Access-Token","authenticator":"header"}`),
 		json.RawMessage(`{"query":"api-key","authenticator":"query"}`),
 	}, authenticatorSet.AuthenticatorsRaw)
 
 	assert.True(t, authenticatorSet.PreserveRequest)
+	assert.True(t, authenticatorSet.Required)
 }
 
 func TestSet_Provision(t *testing.T) {
@@ -80,14 +80,11 @@ func TestSet_Provision_Default(t *testing.T) {
 	err := set.Provision(ctx)
 	require.NoError(t, err)
 
-	if assert.Len(t, set.Authenticators, 3) {
+	if assert.Len(t, set.Authenticators, 2) {
 		_, ok := set.Authenticators[0].(*BearerAuthenticator)
 		assert.True(t, ok)
 
 		_, ok = set.Authenticators[1].(*SessionCookieAuthenticator)
-		assert.True(t, ok)
-
-		_, ok = set.Authenticators[2].(*NoneAuthenticator)
 		assert.True(t, ok)
 	}
 }
@@ -103,7 +100,7 @@ func (TestRequestAuthenticator) AuthenticateRequest(_ OIDCConfiguration, _ *http
 
 func (TestRequestAuthenticator) StripRequest(_ *http.Request) {}
 
-func TestAuthenticatorSet_AuthenticateRequest(t *testing.T) {
+func TestSet_AuthenticateRequest(t *testing.T) {
 	t.Parallel()
 
 	var cfg pkgtest.TestOIDCConfiguration
@@ -122,12 +119,30 @@ func TestAuthenticatorSet_AuthenticateRequest(t *testing.T) {
 	assert.Equal(t, "test", s.UID)
 }
 
-func TestAuthenticatorSet_AuthenticateRequest_NoAuthentication(t *testing.T) {
+func TestSet_AuthenticateRequest_NoAuthentication_Optional(t *testing.T) {
 	t.Parallel()
 
 	var (
 		cfg pkgtest.TestOIDCConfiguration
 		set Set
+	)
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	m, s, err := set.AuthenticateRequest(&cfg, r)
+	require.NoError(t, err)
+	assert.Equal(t, AuthMethodNone, m)
+	assert.True(t, s.Anonymous)
+}
+
+func TestSet_AuthenticateRequest_NoAuthentication_Required(t *testing.T) {
+	t.Parallel()
+
+	var (
+		cfg pkgtest.TestOIDCConfiguration
+		set = Set{
+			Required: true,
+		}
 	)
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -151,7 +166,7 @@ func (SendExpiredError) AuthenticateRequest(_ OIDCConfiguration, _ *http.Request
 	return nil, &oidc.TokenExpiredError{}
 }
 
-func TestAuthenticatorSet_AuthenticateRequest_HandlesExpired(t *testing.T) {
+func TestSet_AuthenticateRequest_HandlesExpired(t *testing.T) {
 	t.Parallel()
 
 	var set = &Set{
@@ -161,8 +176,9 @@ func TestAuthenticatorSet_AuthenticateRequest_HandlesExpired(t *testing.T) {
 	}
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	_, _, err := set.AuthenticateRequest(&pkgtest.TestOIDCConfiguration{}, r)
-	assert.ErrorIs(t, err, ErrNoAuthentication)
+	_, s, err := set.AuthenticateRequest(&pkgtest.TestOIDCConfiguration{}, r)
+	require.NoError(t, err)
+	assert.True(t, s.Anonymous)
 }
 
 type testAuthenticateCallCountImpl struct {

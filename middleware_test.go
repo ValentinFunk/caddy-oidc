@@ -89,7 +89,7 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_BearerOnly(t *testing.T) {
 
 	var he caddyhttp.HandlerError
 	if assert.ErrorAs(t, err, &he) {
-		assert.ErrorIs(t, he.Unwrap(), authenticator.ErrNoAuthentication)
+		assert.ErrorIs(t, he.Unwrap(), ErrAccessDenied)
 		assert.Equal(t, http.StatusUnauthorized, he.StatusCode)
 	}
 }
