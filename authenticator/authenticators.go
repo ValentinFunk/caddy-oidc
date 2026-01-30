@@ -64,6 +64,7 @@ type Set struct {
 	AuthenticatorsRaw []json.RawMessage      `caddy:"namespace=http.oidc.authenticators inline_key=authenticator" json:"authenticators"`
 	Authenticators    []RequestAuthenticator `json:"-"`
 	PreserveRequest   bool                   `json:"preserve_request,omitzero"`
+	Required          bool                   `json:"required,omitempty"`
 }
 
 // Default returns the JSON configuration for the default set of authenticators.
@@ -72,7 +73,6 @@ type Set struct {
 var defaults = []json.RawMessage{
 	json.RawMessage(`{"authenticator": "bearer"}`),
 	json.RawMessage(`{"authenticator": "cookie"}`),
-	json.RawMessage(`{"authenticator": "none"}`),
 }
 
 func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -92,6 +92,11 @@ func (set *Set) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 
 		case "default":
 			set.AuthenticatorsRaw = append(set.AuthenticatorsRaw, defaults...)
+
+			continue
+
+		case "required":
+			set.Required = true
 
 			continue
 		}
@@ -160,7 +165,8 @@ func (set *Set) Validate() error {
 // It returns the first successful authentication method and session.
 //
 // Any ErrNoAuthentication or oidc.TokenExpiredError errors are ignored, and the next authenticator in sequence is tried.
-// If no authenticators succeed, then ErrNoAuthentication is returned.
+// If no authenticators succeed and Required is set, then ErrNoAuthentication is returned.
+// Otherwise, an anonymous session is returned.
 func (set *Set) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (AuthMethod, *session.Session, error) {
 	for _, authenticator := range set.Authenticators {
 		s, err := authenticator.AuthenticateRequest(cfg, r)
@@ -174,7 +180,12 @@ func (set *Set) AuthenticateRequest(cfg OIDCConfiguration, r *http.Request) (Aut
 		}
 	}
 
-	return AuthMethodNone, session.Anonymous(), caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthentication)
+	// If authentication is required and no authenticators succeed, return unauthorized
+	if set.Required {
+		return AuthMethodNone, session.Anonymous(), caddyhttp.Error(http.StatusUnauthorized, ErrNoAuthentication)
+	}
+
+	return AuthMethodNone, session.Anonymous(), nil
 }
 
 // StripRequest removes any authentication information from the request.

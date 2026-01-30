@@ -35,7 +35,6 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
 					claim email role
 					redirect_url http://localhost/oauth/callback
 				}
-				authenticate none
 				protected_resource_metadata {
 					audience
 				}
@@ -66,9 +65,6 @@ func TestOIDCProvider_UnmarshalCaddyfile(t *testing.T) {
         ],
 		"redirect_url": "http://localhost/oauth/callback",
         "authenticator": "cookie"
-      },
-      {
-        "authenticator": "none"
       }
     ]
   },

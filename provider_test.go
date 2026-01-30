@@ -65,7 +65,6 @@ func GenerateTestProvider() *Provider {
 			Authenticators: []authenticator.RequestAuthenticator{
 				&authenticator.BearerAuthenticator{},
 				cookie,
-				&authenticator.NoneAuthenticator{},
 			},
 		},
 		ProtectedResource: new(ProtectedResourceMetadataConfiguration),
