@@ -30,12 +30,8 @@ func init() {
 }
 
 const (
-	defaultCookieName     = "caddy"
-	defaultCookieSameSite = SameSiteLax
-	defaultCookiePath     = "/"
-	//nolint:gosec
-	defaultCookieSecret = "{env.COOKIE_SECRET}"
-	defaultRedirectURL  = "/oauth2/callback"
+	defaultCookiePath  = "/"
+	defaultRedirectURL = "/oauth2/callback"
 )
 
 // ErrNoIDToken is returned when an OAuth2 code exchange response does not contain an ID token.
@@ -52,7 +48,7 @@ type OAuthAuthorizationFlowConfiguration interface {
 }
 
 // SameSite represents the same site attribute of a cookie.
-// ENUM(lax, strict, none)
+// ENUM(lax, strict, none, default = "")
 type SameSite string
 
 func (ss SameSite) HTTPSameSite() http.SameSite {
@@ -63,6 +59,8 @@ func (ss SameSite) HTTPSameSite() http.SameSite {
 		return http.SameSiteStrictMode
 	case SameSiteNone:
 		return http.SameSiteNoneMode
+	case SameSiteDefault:
+		return http.SameSiteDefaultMode
 	default:
 		return http.SameSiteDefaultMode
 	}
@@ -161,10 +159,6 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 
 	var err error
 
-	if au.Name == "" {
-		au.Name = defaultCookieName
-	}
-
 	au.Name, err = repl.ReplaceOrErr(au.Name, true, true)
 	if err != nil {
 		return err
@@ -182,14 +176,6 @@ func (au *SessionCookieAuthenticator) Provision(_ caddy.Context) error {
 	au.Domain, err = repl.ReplaceOrErr(au.Domain, false, true)
 	if err != nil {
 		return err
-	}
-
-	if au.SameSite == "" {
-		au.SameSite = defaultCookieSameSite
-	}
-
-	if au.Secret == "" {
-		au.Secret = defaultCookieSecret
 	}
 
 	au.Secret, err = repl.ReplaceOrErr(au.Secret, true, true)

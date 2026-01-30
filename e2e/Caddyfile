@@ -10,6 +10,8 @@
         scope openid email
         username email
         authenticate cookie {
+            name caddy
+            secret {env.COOKIE_SECRET}
             insecure
         }
     }

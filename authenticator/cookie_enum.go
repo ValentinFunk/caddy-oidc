@@ -17,6 +17,8 @@ const (
 	SameSiteStrict SameSite = "strict"
 	// SameSiteNone is a SameSite of type none.
 	SameSiteNone SameSite = "none"
+	// SameSiteDefault is a SameSite of type default.
+	SameSiteDefault SameSite = ""
 )
 
 var ErrInvalidSameSite = errors.New("not a valid SameSite")
@@ -37,6 +39,7 @@ var _SameSiteValue = map[string]SameSite{
 	"lax":    SameSiteLax,
 	"strict": SameSiteStrict,
 	"none":   SameSiteNone,
+	"":       SameSiteDefault,
 }
 
 // ParseSameSite attempts to convert a string to a SameSite.
