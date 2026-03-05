@@ -1,6 +1,5 @@
 name: govulncheck
 on:
-  push:
   pull_request:
   schedule: # daily at 10:22 UTC
     - cron: '22 10 * * *'
