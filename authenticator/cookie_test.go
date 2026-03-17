@@ -48,13 +48,15 @@ func TestSessionCookieAuthenticator_UnmarshalCaddyfile(t *testing.T) {
 				insecure
 				domain example.com
 				path /auth
+				popup_storage_prefix app-
 			}`,
 			expect: SessionCookieAuthenticator{
-				Name:     "block_cookie",
-				SameSite: SameSiteStrict,
-				Insecure: true,
-				Domain:   "example.com",
-				Path:     "/auth",
+				Name:               "block_cookie",
+				SameSite:           SameSiteStrict,
+				Insecure:           true,
+				Domain:             "example.com",
+				Path:               "/auth",
+				PopupStoragePrefix: "app-",
 			},
 		},
 		{
@@ -251,4 +253,21 @@ func TestSessionCookieAuthenticator_StripRequest(t *testing.T) {
 		assert.Equal(t, "some-other-cookie=foobar", cookies[0].String())
 		assert.Equal(t, "some-second-cookie=barfoo", cookies[1].String())
 	}
+}
+
+func TestSessionCookieAuthenticator_ServePopupLoginPage(t *testing.T) {
+	t.Parallel()
+
+	au := &SessionCookieAuthenticator{}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "https://preview.example.com/apps/nectar/?foo=bar", nil)
+
+	err := au.ServePopupLoginPage(w, r)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/html; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Contains(t, w.Body.String(), "Login Required")
+	assert.Contains(t, w.Body.String(), "var popupPath=\"/apps/nectar/?foo=bar\\u0026popup=1\";")
+	assert.Contains(t, w.Body.String(), "attemptedAutoPopup")
 }

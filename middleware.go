@@ -202,6 +202,10 @@ func (mw *OIDCMiddleware) interceptRequest(rw http.ResponseWriter, r *http.Reque
 			if r.Method == http.MethodGet && request.IsBrowserInteractive(r) {
 				cookie, ok := authenticator.GetAuthenticator[*authenticator.SessionCookieAuthenticator](&mw.Provider.Authenticators)
 				if ok {
+					if request.IsIframe(r) {
+						return true, cookie.ServePopupLoginPage(rw, r)
+					}
+
 					return true, cookie.StartLogin(mw.Provider, rw, r)
 				}
 			}

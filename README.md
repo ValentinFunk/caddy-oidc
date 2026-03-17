@@ -151,6 +151,7 @@ The `cookie` authenticator is used to authenticate requests using a self-signed 
 | `same_site`    | (optional) The samesite mode of the cookie. One of `lax`, `strict` or `none`                                                                                |                    |
 | `claims`       | (optional) Claims to copy into the session cookie.                                                                                                          |                    |
 | `redirect_url` | (optional) The URL to redirect to after authentication. If the URL is relative, the fully qualified URL is constructed using the request host and protocol. | `/oauth2/callback` |
+| `popup_storage_prefix` | (optional) Writes OAuth token fields from popup callback into `localStorage` using this key prefix.                                              |                    |
 
 
 To minimize the size of the cookie, no claims are copied into the session cookie by default.
@@ -167,8 +168,10 @@ Automatic redirection to the OIDC provider for login happens when all the follow
 - Authentication is not required
 - There is no matching explicit `allow` or `deny` rule
 - The request is made by a browser, determined by:
-    - `Sec-Fetch-Dest` is `document` or `iframe`
+    - `Sec-Fetch-Dest` is `document`
     - `Accept` header contains `text/html`
+
+For iframe requests (`Sec-Fetch-Dest: iframe`) that need interactive login, caddy-oidc serves a popup-based login page instead of redirecting the iframe directly. See [popup-implementation-guide.md](./popup-implementation-guide.md) for cross-origin iframe setup details (`SameSite=None`, Storage Access API requirements, iframe sandbox/allow attributes, and optional token storage).
 
 #### Header
 
@@ -475,4 +478,3 @@ header X-User-Claim-Email {http.auth.user.claim.email} {
 - Null values are empty
 - Objects are formatted as JSON
 - Arrays are formatted using the above rules for each element, joined by commas. Nested arrays are formatted as JSON
-

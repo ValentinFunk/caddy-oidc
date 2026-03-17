@@ -2,12 +2,15 @@ package authenticator
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
@@ -76,14 +79,15 @@ var (
 
 // SessionCookieAuthenticator authenticates the request from a signed cookie.
 type SessionCookieAuthenticator struct {
-	Name        string   `json:"name,omitempty"`
-	SameSite    SameSite `json:"same_site,omitempty"`
-	Insecure    bool     `json:"insecure,omitempty"`
-	Domain      string   `json:"domain,omitempty"`
-	Path        string   `json:"path,omitempty"`
-	Secret      string   `json:"secret,omitempty"`
-	Claims      []string `json:"claims,omitempty"`
-	RedirectURL string   `json:"redirect_url,omitempty"`
+	Name               string   `json:"name,omitempty"`
+	SameSite           SameSite `json:"same_site,omitempty"`
+	Insecure           bool     `json:"insecure,omitempty"`
+	Domain             string   `json:"domain,omitempty"`
+	Path               string   `json:"path,omitempty"`
+	Secret             string   `json:"secret,omitempty"`
+	Claims             []string `json:"claims,omitempty"`
+	RedirectURL        string   `json:"redirect_url,omitempty"`
+	PopupStoragePrefix string   `json:"popup_storage_prefix,omitempty"`
 
 	secure      *securecookie.SecureCookie
 	redirectURL *url.URL
@@ -144,6 +148,10 @@ func (au *SessionCookieAuthenticator) UnmarshalCaddyfile(d *caddyfile.Dispenser)
 			}
 		case "redirect_url":
 			if !d.Args(&au.RedirectURL) {
+				return d.ArgErr()
+			}
+		case "popup_storage_prefix":
+			if !d.Args(&au.PopupStoragePrefix) {
 				return d.ArgErr()
 			}
 		default:
@@ -262,6 +270,7 @@ func (au *SessionCookieAuthenticator) NewCookie(value string) *http.Cookie {
 type CSRFToken struct {
 	PKCEVerifier string `json:"v"`
 	RedirectURI  string `json:"r"`
+	Popup        bool   `json:"p,omitempty"`
 }
 
 // GetAbsRedirectURI returns the absolute redirect URI, resolving it relative to the request URL if necessary.
@@ -277,11 +286,13 @@ func (au *SessionCookieAuthenticator) GetAbsRedirectURI(r *http.Request) *url.UR
 // The state cookie is in the format of `<cookie_name>|<state>`, with the value containing the PKCE code verifier.
 // The OAuth2 redirect URI is set to the configured redirect URI made absolute relative to the request URL.
 func (au *SessionCookieAuthenticator) StartLogin(cfg OAuthAuthorizationFlowConfiguration, rw http.ResponseWriter, r *http.Request) error {
+	popup := r.URL.Query().Get("popup") == "1"
+
 	var (
 		state             = uuid.New().String()
 		pkceVerifier      = oauth2.GenerateVerifier()
 		csrfCookieName    = fmt.Sprintf("%s|%s", au.Name, state)
-		csrfCookiePayload = &CSRFToken{PKCEVerifier: pkceVerifier, RedirectURI: r.RequestURI}
+		csrfCookiePayload = &CSRFToken{PKCEVerifier: pkceVerifier, RedirectURI: r.RequestURI, Popup: popup}
 	)
 
 	csrfCookieValue, err := au.secure.Encode(csrfCookieName, csrfCookiePayload)
@@ -336,41 +347,41 @@ func (au *SessionCookieAuthenticator) handleCallbackParseCSRFCookie(rw http.Resp
 }
 
 // handleCodeExchange performs the OAuth2 token exchange using the PKCE code Verifier.
-// It then verifies the ID token and returns the userinfo claims as well as the ID token expiry time.
+// It then verifies the ID token and returns the userinfo claims as well as the OAuth2 token response.
 func (au *SessionCookieAuthenticator) handleCodeExchange(
 	cfg OAuthAuthorizationFlowConfiguration,
 	r *http.Request,
 	pkceVerifier string,
-) (*oidc.UserInfo, time.Time, error) {
+) (*oidc.UserInfo, *oauth2.Token, error) {
 	response, err := cfg.Exchange(r.Context(), r.FormValue("code"),
 		oauth2.VerifierOption(pkceVerifier),
 		oauth2.SetAuthURLParam("redirect_uri", au.GetAbsRedirectURI(r).String()),
 	)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("failed to exchange token: %w", err)
+		return nil, nil, fmt.Errorf("failed to exchange token: %w", err)
 	}
 
 	idTokenPlain, ok := response.Extra("id_token").(string)
 	if !ok {
-		return nil, time.Time{}, ErrNoIDToken
+		return nil, nil, ErrNoIDToken
 	}
 
 	verifier, err := cfg.GetVerifier(r.Context())
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("failed to get verifier: %w", err)
+		return nil, nil, fmt.Errorf("failed to get verifier: %w", err)
 	}
 
 	_, err = verifier.Verify(r.Context(), idTokenPlain)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("failed to verify id_token: %w", err)
+		return nil, nil, fmt.Errorf("failed to verify id_token: %w", err)
 	}
 
 	userInfo, err := cfg.UserInfo(r.Context(), oauth2.StaticTokenSource(response))
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("failed to fetch userinfo: %w", err)
+		return nil, nil, fmt.Errorf("failed to fetch userinfo: %w", err)
 	}
 
-	return userInfo, response.Expiry, nil
+	return userInfo, response, nil
 }
 
 // IsCallbackURL returns true if the request is a callback from the authorization endpoint.
@@ -397,7 +408,7 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	}
 
 	// Exchange code for ID token
-	userInfo, idTokenExpires, err := au.handleCodeExchange(cfg, r, csrfToken.PKCEVerifier)
+	userInfo, tokenResponse, err := au.handleCodeExchange(cfg, r, csrfToken.PKCEVerifier)
 	if err != nil {
 		return caddyhttp.Error(http.StatusBadRequest, err)
 	}
@@ -417,7 +428,7 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	s := &session.Session{
 		UID:       uidJSON.String(),
 		Claims:    json.RawMessage(`{}`),
-		ExpiresAt: idTokenExpires.Unix(),
+		ExpiresAt: tokenResponse.Expiry.Unix(),
 	}
 
 	// Copy claims
@@ -438,6 +449,10 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 
 	http.SetCookie(rw, au.NewCookie(cookieValue))
 
+	if csrfToken.Popup {
+		return au.servePopupCallbackPage(rw, tokenResponse)
+	}
+
 	// Redirect to the configured redirect URI
 	var redirectURI = csrfToken.RedirectURI
 	if redirectURI == "" {
@@ -447,6 +462,149 @@ func (au *SessionCookieAuthenticator) HandleCallback(cfg OAuthAuthorizationFlowC
 	http.Redirect(rw, r, redirectURI, http.StatusFound)
 
 	return nil
+}
+
+// popupLoginPageHTML is the HTML page served inside an iframe when authentication is required.
+// It prompts the user to log in via a popup window.
+const popupLoginPageHTML = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login Required</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f5f5f5;color:#333}
+.card{text-align:center;padding:2rem;max-width:360px}
+.icon{font-size:2.5rem;margin-bottom:1rem}
+h1{font-size:1.125rem;font-weight:600;margin-bottom:.5rem}
+p{font-size:.875rem;color:#666;margin-bottom:1.5rem}
+button{background:#111;color:#fff;border:none;padding:.625rem 1.5rem;border-radius:6px;font-size:.875rem;cursor:pointer;transition:background .15s}
+button:hover{background:#333}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="icon">&#128274;</div>
+<h1>Login Required</h1>
+<p>Sign in to access this content.</p>
+<button onclick="doLogin()">Sign In</button>
+</div>
+<script>
+var popupPath=%s;
+var attemptedAutoPopup=false;
+function doLogin(){
+var w=window.open(location.origin+popupPath,"_blank","width=500,height=600,popup=1");
+if(!w||w.closed){alert("Popup was blocked. Please allow popups for this site.");return}
+}
+window.addEventListener("load",function(){
+if(attemptedAutoPopup){return}
+attemptedAutoPopup=true;
+doLogin();
+});
+window.addEventListener("message",function(e){
+if(e.origin===location.origin&&e.data&&e.data.type==="oidc-login-complete"){
+if(document.requestStorageAccess){document.requestStorageAccess().then(function(){location.reload()}).catch(function(){location.reload()})}
+else{location.reload()}
+}
+});
+</script>
+</body>
+</html>`
+
+// ServePopupLoginPage serves an HTML page inside an iframe that guides the user
+// to complete authentication via a popup window.
+// The popup opens the current request path with ?popup=1, which will trigger
+// StartLogin in the popup (as a top-level document request, not an iframe).
+func (au *SessionCookieAuthenticator) ServePopupLoginPage(rw http.ResponseWriter, r *http.Request) error {
+	popupPath := *r.URL
+	query := popupPath.Query()
+	query.Set("popup", "1")
+	popupPath.RawQuery = query.Encode()
+
+	popupPathJSON, err := json.Marshal(popupPath.RequestURI())
+	if err != nil {
+		return fmt.Errorf("failed to encode popup path: %w", err)
+	}
+
+	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.WriteHeader(http.StatusOK)
+
+	_, err = fmt.Fprintf(rw, popupLoginPageHTML, popupPathJSON)
+
+	return err
+}
+
+// servePopupCallbackPage renders the popup callback page.
+// If PopupStoragePrefix is configured, it writes the OAuth2 tokens to localStorage
+// so the SPA in the iframe can use them (they share the same origin).
+func (au *SessionCookieAuthenticator) servePopupCallbackPage(rw http.ResponseWriter, token *oauth2.Token) error {
+	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+	rw.WriteHeader(http.StatusOK)
+
+	var sb strings.Builder
+
+	sb.WriteString(`<!DOCTYPE html><html><head><title>Login Complete</title></head><body><script>`)
+
+	if au.PopupStoragePrefix != "" {
+		now := strconv.FormatInt(time.Now().Unix(), 10)
+		expiresAt := strconv.FormatInt(token.Expiry.Unix(), 10)
+
+		storageEntries := map[string]string{
+			au.PopupStoragePrefix + "access_token":           token.AccessToken,
+			au.PopupStoragePrefix + "access_token_stored_at": now,
+			au.PopupStoragePrefix + "expires_at":             expiresAt,
+			au.PopupStoragePrefix + "token_type":             token.TokenType,
+		}
+
+		if idToken, ok := token.Extra("id_token").(string); ok {
+			storageEntries[au.PopupStoragePrefix+"id_token"] = idToken
+			storageEntries[au.PopupStoragePrefix+"id_token_stored_at"] = now
+			storageEntries[au.PopupStoragePrefix+"id_token_expires_at"] = expiresAt
+
+			if claims, err := decodeJWTPayload(idToken); err == nil {
+				storageEntries[au.PopupStoragePrefix+"id_token_claims_obj"] = claims
+			}
+		}
+
+		if token.RefreshToken != "" {
+			storageEntries[au.PopupStoragePrefix+"refresh_token"] = token.RefreshToken
+		}
+
+		if sessionState, ok := token.Extra("session_state").(string); ok && sessionState != "" {
+			storageEntries[au.PopupStoragePrefix+"session_state"] = sessionState
+		}
+
+		entriesJSON, err := json.Marshal(storageEntries)
+		if err != nil {
+			return fmt.Errorf("failed to marshal storage entries: %w", err)
+		}
+
+		fmt.Fprintf(&sb, `var t=%s;for(var k in t){localStorage.setItem(k,t[k])};`, string(entriesJSON))
+	}
+
+	sb.WriteString(`if(window.opener){window.opener.postMessage({type:"oidc-login-complete"},location.origin)}`)
+	sb.WriteString(`window.close();`)
+	sb.WriteString(`</script></body></html>`)
+
+	_, err := fmt.Fprint(rw, sb.String())
+
+	return err
+}
+
+// decodeJWTPayload extracts and returns the JSON payload from a JWT string.
+func decodeJWTPayload(jwt string) (string, error) {
+	parts := strings.SplitN(jwt, ".", 3)
+	if len(parts) < 2 {
+		return "", errors.New("invalid JWT format")
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", err
+	}
+
+	return string(payload), nil
 }
 
 func (au *SessionCookieAuthenticator) StripRequest(r *http.Request) {

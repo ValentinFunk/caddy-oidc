@@ -28,6 +28,11 @@ func URL(r *http.Request) *url.URL {
 	return u
 }
 
+// IsIframe returns true if the request is coming from an iframe based on the Sec-Fetch-Dest header.
+func IsIframe(r *http.Request) bool {
+	return r.Header.Get("Sec-Fetch-Dest") == "iframe"
+}
+
 // IsBrowserInteractive returns true if the request is likely coming from a browser.
 func IsBrowserInteractive(r *http.Request) bool {
 	dest := r.Header.Get("Sec-Fetch-Dest")

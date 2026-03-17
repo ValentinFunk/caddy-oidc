@@ -66,6 +66,29 @@ func TestOIDCMiddleware_ServeHTTP_WithoutAuth_AuthorizationFlowSupported(t *test
 	}
 }
 
+func TestOIDCMiddleware_ServeHTTP_WithoutAuth_Iframe_ServesPopupLoginPage(t *testing.T) {
+	t.Parallel()
+
+	auth := &OIDCMiddleware{
+		Provider: GenerateTestProvider(),
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/some/page", nil)
+	r.Header.Set("Sec-Fetch-Dest", "iframe")
+
+	h := new(TestHandler)
+
+	err := auth.ServeHTTP(w, r, h)
+	require.NoError(t, err)
+	assert.Equal(t, 0, h.calls)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "text/html; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Contains(t, w.Body.String(), "Login Required")
+	assert.Contains(t, w.Body.String(), "popup=1")
+	assert.Contains(t, w.Body.String(), "oidc-login-complete")
+}
+
 func TestOIDCMiddleware_ServeHTTP_WithoutAuth_BearerOnly(t *testing.T) {
 	t.Parallel()
 

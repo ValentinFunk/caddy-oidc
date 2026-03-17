@@ -81,6 +81,33 @@ func TestURL(t *testing.T) {
 	}
 }
 
+func TestIsIframe(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		dest   string
+		expect bool
+	}{
+		{name: "iframe", dest: "iframe", expect: true},
+		{name: "document", dest: "document", expect: false},
+		{name: "empty", dest: "", expect: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.dest != "" {
+				r.Header.Set("Sec-Fetch-Dest", tt.dest)
+			}
+
+			assert.Equal(t, tt.expect, IsIframe(r))
+		})
+	}
+}
+
 func TestShouldStartLogin(t *testing.T) {
 	t.Parallel()
 
